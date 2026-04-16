@@ -27,7 +27,7 @@ on:
 
       # ── 构建目标 ────────────────────────────────────────────
       platforms:
-        description: '构建平台，逗号分隔（android,windows,linux,macos,ios），留空=全部'
+        description: '构建平台，逗号分隔（android,windows,linux,macos,ios,openwrt），留空=全部'
         required: false
         default: ''
 
@@ -1485,9 +1485,116 @@ jobs:
               })
           PYEOF
 
+  # ── OpenWrt：交叉编译 mihomo 核心 + 打包配置 ────────────────
+  openwrt:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    if: |
+      github.event_name == 'push' ||
+      inputs.platforms == '' ||
+      contains(inputs.platforms, 'openwrt')
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: amd64
+            goarch: amd64
+          - arch: arm64
+            goarch: arm64
+          - arch: armv7
+            goarch: arm
+            goarm: "7"
+          - arch: armv5
+            goarch: arm
+            goarm: "5"
+          - arch: mips-softfloat
+            goarch: mips
+            gomips: softfloat
+          - arch: mipsle-softfloat
+            goarch: mipsle
+            gomips: softfloat
+
+    steps:
+      - name: Configure git credentials
+        run: |
+          git config --global credential.helper ""
+          git config --global url."https://x-access-token:${{ secrets.PRIVATE_REPO_TOKEN }}@github.com/".insteadOf "git@github.com:"
+          git config --global url."https://x-access-token:${{ secrets.PRIVATE_REPO_TOKEN }}@github.com/".insteadOf "https://github.com/"
+
+      - name: Checkout private source
+        uses: actions/checkout@v4
+        with:
+          repository: ${{ secrets.PRIVATE_REPO_NAME }}
+          token: ${{ secrets.PRIVATE_REPO_TOKEN }}
+          submodules: recursive
+          ref: ${{ env.PRIVATE_REF }}
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: stable
+          cache: false
+
+      - name: Get version
+        id: version
+        run: |
+          VER=$(grep -oP 'version:\s*\K[\d.]+' pubspec.yaml || echo "0.0.0")
+          echo "version=$VER" >> $GITHUB_OUTPUT
+
+      - name: Build mihomo core
+        env:
+          GOOS: linux
+          GOARCH: ${{ matrix.goarch }}
+          GOARM: ${{ matrix.goarm }}
+          GOMIPS: ${{ matrix.gomips }}
+          CGO_ENABLED: "0"
+        run: |
+          VER="${{ steps.version.outputs.version }}"
+          cd core/Clash.Meta
+          go build \
+            -tags="with_gvisor" \
+            -trimpath \
+            -ldflags="-w -s -X 'github.com/metacubex/mihomo/constant.Version=$VER' -X 'github.com/metacubex/mihomo/constant.BuildTime=$(date -u +%Y-%m-%dT%H:%M:%SZ)'" \
+            -o /tmp/mihomo
+
+      - name: Package for OpenWrt
+        run: |
+          VER="${{ steps.version.outputs.version }}"
+          ARCH="${{ matrix.arch }}"
+          APP_NAME="${{ inputs.app_name || 'mihomo' }}"
+          PKG="/tmp/pkg"
+
+          mkdir -p "$PKG/usr/bin"
+          mkdir -p "$PKG/etc/init.d"
+          mkdir -p "$PKG/etc/config"
+          mkdir -p "$PKG/etc/mihomo"
+          mkdir -p "$PKG/etc/uci-defaults"
+
+          cp /tmp/mihomo "$PKG/usr/bin/mihomo"
+          chmod +x "$PKG/usr/bin/mihomo"
+
+          cp openwrt/etc/init.d/mihomo "$PKG/etc/init.d/mihomo"
+          chmod +x "$PKG/etc/init.d/mihomo"
+          cp openwrt/etc/config/mihomo "$PKG/etc/config/mihomo"
+          cp openwrt/etc/mihomo/config.yaml "$PKG/etc/mihomo/config.yaml"
+          cp openwrt/etc/uci-defaults/99-mihomo "$PKG/etc/uci-defaults/99-mihomo"
+          chmod +x "$PKG/etc/uci-defaults/99-mihomo"
+
+          mkdir -p dist
+          (cd "$PKG" && tar czf "$GITHUB_WORKSPACE/dist/${APP_NAME}-openwrt-${ARCH}-${VER}.tar.gz" .)
+          echo "=== Package built ==="
+          ls -lh dist/
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: artifact-openwrt-${{ matrix.arch }}
+          path: dist/*
+          compression-level: 0
+
   # ── Release：打 tag 时自动发布到本公共仓库 ──────────────────
   release:
-    needs: build
+    needs: [build, openwrt]
     runs-on: ubuntu-latest
     permissions:
       contents: write
