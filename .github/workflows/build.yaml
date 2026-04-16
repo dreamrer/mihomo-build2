@@ -1211,13 +1211,25 @@ jobs:
 
           echo "[sign] Signing: $APP_DIR"
 
+          # 查找 entitlements 文件
+          ENTITLEMENTS=$(find "$APP_DIR" -path "*/Runner/Release.entitlements" 2>/dev/null | head -1)
+          if [ -z "$ENTITLEMENTS" ]; then
+            # 从源码目录获取
+            ENTITLEMENTS="macos/Runner/Release.entitlements"
+          fi
+          echo "[sign] Entitlements: $ENTITLEMENTS"
+
           # 递归签名所有 frameworks 和 dylibs（由内而外）
           find "$APP_DIR" -name "*.framework" -o -name "*.dylib" | while read fw; do
             codesign --force --deep --sign - "$fw" 2>/dev/null || true
           done
 
-          # 签名主 App
-          codesign --force --deep --sign - "$APP_DIR"
+          # 签名主 App（带 entitlements）
+          if [ -f "$ENTITLEMENTS" ]; then
+            codesign --force --deep --sign - --entitlements "$ENTITLEMENTS" "$APP_DIR"
+          else
+            codesign --force --deep --sign - "$APP_DIR"
+          fi
           echo "[sign] ✅ Ad-hoc signed: $APP_DIR"
 
           # 验证签名
