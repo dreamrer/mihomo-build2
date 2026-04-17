@@ -1532,9 +1532,23 @@ jobs:
           CORE_DIR="core/Clash.Meta"
           mkdir -p dist
 
+          # OpenWrt ipk 架构命名（与 opkg 架构一致）
+          # https://openwrt.org/docs/techref/instructionset
+          ipk_arch_name() {
+            case "$1" in
+              amd64)            echo "x86_64" ;;
+              arm64)            echo "aarch64_generic" ;;
+              armv7)            echo "arm_cortex-a7" ;;
+              armv5)            echo "arm_mpcore" ;;
+              mips-softfloat)   echo "mips_24kc" ;;
+              mipsle-softfloat) echo "mipsel_24kc" ;;
+            esac
+          }
+
           build_arch() {
             local arch="$1" goarch="$2" goarm="$3" gomips="$4"
-            echo "=== Building $arch ==="
+            local ipk_arch; ipk_arch="$(ipk_arch_name "$arch")"
+            echo "=== Building $arch (ipk: $ipk_arch) ==="
 
             GOOS=linux GOARCH="$goarch" GOARM="$goarm" GOMIPS="$gomips" CGO_ENABLED=0 \
               go build -C "$CORE_DIR" -tags="with_gvisor" -trimpath -ldflags="$LDFLAGS" -o "/tmp/mihomo-$arch"
@@ -1543,16 +1557,70 @@ jobs:
             mkdir -p "$pkg/usr/bin" "$pkg/etc/init.d" "$pkg/etc/config" "$pkg/etc/mihomo" "$pkg/etc/uci-defaults"
 
             cp "/tmp/mihomo-$arch" "$pkg/usr/bin/mihomo"
-            chmod +x "$pkg/usr/bin/mihomo"
+            chmod 755 "$pkg/usr/bin/mihomo"
             cp openwrt/etc/init.d/mihomo "$pkg/etc/init.d/mihomo"
-            chmod +x "$pkg/etc/init.d/mihomo"
+            chmod 755 "$pkg/etc/init.d/mihomo"
             cp openwrt/etc/config/mihomo "$pkg/etc/config/mihomo"
             cp openwrt/etc/mihomo/config.yaml "$pkg/etc/mihomo/config.yaml"
             cp openwrt/etc/uci-defaults/99-mihomo "$pkg/etc/uci-defaults/99-mihomo"
-            chmod +x "$pkg/etc/uci-defaults/99-mihomo"
+            chmod 755 "$pkg/etc/uci-defaults/99-mihomo"
 
-            (cd "$pkg" && tar czf "$GITHUB_WORKSPACE/dist/${APP_NAME}-openwrt-${arch}-${VER}.tar.gz" .)
-            rm -rf "$pkg" "/tmp/mihomo-$arch"
+            # ── 打 .ipk（opkg 格式，ar 归档套两层 tar.gz）──
+            local ctl="/tmp/ctl-$arch"
+            mkdir -p "$ctl"
+            cat > "$ctl/control" <<CONTROL
+Package: ${APP_NAME}
+Version: ${VER}
+Architecture: ${ipk_arch}
+Maintainer: Apex <noreply@apex.local>
+Section: net
+Priority: optional
+Description: Apex VPN client (mihomo core) for OpenWrt.
+CONTROL
+            cat > "$ctl/postinst" <<'POSTINST'
+#!/bin/sh
+[ -n "${IPKG_INSTROOT}" ] && exit 0
+/etc/init.d/mihomo enable 2>/dev/null || true
+echo "[mihomo] installed. Run: /etc/init.d/mihomo start"
+exit 0
+POSTINST
+            cat > "$ctl/prerm" <<'PRERM'
+#!/bin/sh
+[ -n "${IPKG_INSTROOT}" ] && exit 0
+/etc/init.d/mihomo stop 2>/dev/null || true
+/etc/init.d/mihomo disable 2>/dev/null || true
+exit 0
+PRERM
+            chmod 755 "$ctl/postinst" "$ctl/prerm"
+
+            (cd "$ctl" && tar czf /tmp/control.tar.gz ./control ./postinst ./prerm)
+            (cd "$pkg" && tar czf /tmp/data.tar.gz .)
+            echo "2.0" > /tmp/debian-binary
+
+            local ipk_name="${APP_NAME}_${VER}_${ipk_arch}.ipk"
+            (cd /tmp && ar r "$GITHUB_WORKSPACE/dist/$ipk_name" debian-binary control.tar.gz data.tar.gz 2>/dev/null)
+
+            # ── 打 .run（自解压脚本 + 内嵌 tar.gz）──
+            local payload="/tmp/payload-$arch.tar.gz"
+            (cd "$pkg" && tar czf "$payload" .)
+            local run_name="${APP_NAME}-openwrt-${arch}-${VER}.run"
+            local run_path="$GITHUB_WORKSPACE/dist/$run_name"
+            cat > "$run_path" <<'RUNHEAD'
+#!/bin/sh
+# Apex OpenWrt self-extracting installer
+set -e
+echo "[mihomo] extracting to /..."
+ARCHIVE_LINE=$(awk '/^__ARCHIVE_BELOW__/ {print NR + 1; exit 0;}' "$0")
+tail -n +"$ARCHIVE_LINE" "$0" | tar xzf - -C /
+/etc/init.d/mihomo enable 2>/dev/null || true
+echo "[mihomo] installed. Run: /etc/init.d/mihomo start"
+exit 0
+__ARCHIVE_BELOW__
+RUNHEAD
+            cat "$payload" >> "$run_path"
+            chmod 755 "$run_path"
+
+            rm -rf "$pkg" "$ctl" "/tmp/mihomo-$arch" "$payload" /tmp/control.tar.gz /tmp/data.tar.gz /tmp/debian-binary
           }
 
           build_arch amd64           amd64   "" ""

@@ -12,7 +12,7 @@ Multi-platform build pipeline for Apex VPN client. Releases are published here a
 | macOS | Universal (Apple Silicon + Intel) | DMG |
 | Linux | x86_64 | DEB / RPM / AppImage |
 | iOS | arm64 | IPA |
-| OpenWrt | amd64 / arm64 / armv7 / armv5 / mips / mipsle | tar.gz |
+| OpenWrt | amd64 / arm64 / armv7 / armv5 / mips / mipsle | ipk / .run |
 
 ## OpenWrt
 
@@ -20,15 +20,22 @@ OpenWrt packages contain the pre-compiled mihomo core binary along with init scr
 
 ### Install
 
+**Option A — opkg (ipk):**
 ```bash
-# Download the package for your router architecture
-tar xzf mihomo-openwrt-arm64-*.tar.gz -C /
+opkg install mihomo_*_aarch64_generic.ipk
+```
 
-# Enable and configure
+**Option B — self-extracting (.run):**
+```bash
+chmod +x mihomo-openwrt-arm64-*.run
+./mihomo-openwrt-arm64-*.run
+```
+
+**Configure:**
+```bash
 uci set mihomo.config.enabled='1'
 uci set mihomo.config.subscription_url='https://your-panel.com/api/v1/client/subscribe?token=xxx'
 uci commit mihomo
-/etc/init.d/mihomo enable
 /etc/init.d/mihomo start
 ```
 
