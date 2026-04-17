@@ -1531,6 +1531,11 @@ jobs:
           VER="${{ steps.version.outputs.version }}"
           BUILD_TIME="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
           APP_NAME="${{ inputs.app_name || 'mihomo' }}"
+          # opkg 包标识符必须 ASCII：app_name 可能含中文（仅用于描述），
+          # 包名/文件名统一用 ASCII 安全的 PKG_NAME。
+          PKG_NAME="$(printf '%s' "$APP_NAME" | LC_ALL=C tr '[:upper:]' '[:lower:]' | LC_ALL=C tr -cd 'a-z0-9-')"
+          [ -z "$PKG_NAME" ] && PKG_NAME="mihomo"
+          echo "APP_NAME=$APP_NAME  PKG_NAME=$PKG_NAME"
           LDFLAGS="-w -s -X 'github.com/metacubex/mihomo/constant.Version=$VER' -X 'github.com/metacubex/mihomo/constant.BuildTime=$BUILD_TIME'"
           CORE_DIR="core/Clash.Meta"
           mkdir -p dist
@@ -1568,23 +1573,23 @@ jobs:
             cp openwrt/etc/uci-defaults/99-mihomo "$pkg/etc/uci-defaults/99-mihomo"
             chmod 755 "$pkg/etc/uci-defaults/99-mihomo"
 
-            # ── 打 .ipk（opkg 格式，ar 归档套两层 tar.gz）──
+            # ── 打 .ipk（OpenWrt 传统格式：gzipped tar 套两层 tar.gz，非 deb 的 ar 归档）──
             local ctl="/tmp/ctl-$arch"
             mkdir -p "$ctl"
             {
-              printf 'Package: %s\n'        "$APP_NAME"
+              printf 'Package: %s\n'        "$PKG_NAME"
               printf 'Version: %s\n'        "$VER"
               printf 'Architecture: %s\n'   "$ipk_arch"
               printf 'Maintainer: Apex <noreply@apex.local>\n'
               printf 'Section: net\n'
               printf 'Priority: optional\n'
-              printf 'Description: Apex VPN client (mihomo core) for OpenWrt.\n'
+              printf 'Description: %s VPN client (mihomo core) for OpenWrt.\n' "$APP_NAME"
             } > "$ctl/control"
             {
               printf '#!/bin/sh\n'
               printf '[ -n "${IPKG_INSTROOT}" ] && exit 0\n'
               printf '/etc/init.d/mihomo enable 2>/dev/null || true\n'
-              printf 'echo "[mihomo] installed. Run: /etc/init.d/mihomo start"\n'
+              printf 'echo "[%s] installed. Run: /etc/init.d/mihomo start"\n' "$APP_NAME"
               printf 'exit 0\n'
             } > "$ctl/postinst"
             {
@@ -1600,8 +1605,8 @@ jobs:
             (cd "$pkg" && tar czf /tmp/data.tar.gz .)
             echo "2.0" > /tmp/debian-binary
 
-            local ipk_name="${APP_NAME}_${VER}_${ipk_arch}.ipk"
-            (cd /tmp && ar r "$GITHUB_WORKSPACE/dist/$ipk_name" debian-binary control.tar.gz data.tar.gz 2>/dev/null)
+            local ipk_name="${PKG_NAME}_${VER}_${ipk_arch}.ipk"
+            (cd /tmp && tar czf "$GITHUB_WORKSPACE/dist/$ipk_name" ./debian-binary ./control.tar.gz ./data.tar.gz)
 
             rm -rf "$pkg" "$ctl" "/tmp/mihomo-$arch" /tmp/control.tar.gz /tmp/data.tar.gz /tmp/debian-binary
           }
@@ -1626,13 +1631,13 @@ jobs:
           luci_ctl="/tmp/ctl-luci"
           mkdir -p "$luci_ctl"
           {
-            printf 'Package: luci-app-%s\n'       "$APP_NAME"
+            printf 'Package: luci-app-%s\n'       "$PKG_NAME"
             printf 'Version: %s\n'                "$VER"
             printf 'Architecture: all\n'
             printf 'Maintainer: Apex <noreply@apex.local>\n'
             printf 'Section: luci\n'
             printf 'Priority: optional\n'
-            printf 'Depends: %s, luci-base, luci-compat\n' "$APP_NAME"
+            printf 'Depends: %s, luci-base, luci-compat\n' "$PKG_NAME"
             printf 'Description: LuCI web interface for %s (mihomo).\n' "$APP_NAME"
           } > "$luci_ctl/control"
           {
@@ -1648,22 +1653,22 @@ jobs:
           (cd "$luci_pkg" && tar czf /tmp/data.tar.gz .)
           echo "2.0" > /tmp/debian-binary
 
-          luci_ipk="luci-app-${APP_NAME}_${VER}_all.ipk"
-          (cd /tmp && ar r "$GITHUB_WORKSPACE/dist/$luci_ipk" debian-binary control.tar.gz data.tar.gz 2>/dev/null)
+          luci_ipk="luci-app-${PKG_NAME}_${VER}_all.ipk"
+          (cd /tmp && tar czf "$GITHUB_WORKSPACE/dist/$luci_ipk" ./debian-binary ./control.tar.gz ./data.tar.gz)
           rm -rf "$luci_pkg" "$luci_ctl" /tmp/control.tar.gz /tmp/data.tar.gz /tmp/debian-binary
 
           # ── 打 .run（内嵌 core.ipk + luci-app.ipk，用 opkg install 注册到包数据库）──
           echo "=== Building .run installers ==="
           build_run() {
             local arch="$1" ipk_arch; ipk_arch="$(ipk_arch_name "$arch")"
-            local core_ipk="${APP_NAME}_${VER}_${ipk_arch}.ipk"
-            local luci="${APP_NAME}_${VER}_all.ipk"  # placeholder, overridden below
-            luci="luci-app-${APP_NAME}_${VER}_all.ipk"
+            local core_ipk="${PKG_NAME}_${VER}_${ipk_arch}.ipk"
+            local luci="luci-app-${PKG_NAME}_${VER}_all.ipk"
 
             # 组装 payload：两个 ipk 打成 tar.gz
             local pay="/tmp/run-payload-$arch.tar.gz"
             tar czf "$pay" -C "$GITHUB_WORKSPACE/dist" "$core_ipk" "$luci"
 
+            # .run 文件名保留 APP_NAME（展示用），内部用 PKG_NAME
             local run_name="${APP_NAME}-openwrt-${arch}-${VER}.run"
             local run_path="$GITHUB_WORKSPACE/dist/$run_name"
             {
