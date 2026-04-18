@@ -1643,8 +1643,13 @@ jobs:
           {
             printf '#!/bin/sh\n'
             printf '[ -n "${IPKG_INSTROOT}" ] && exit 0\n'
-            printf 'rm -f /tmp/luci-indexcache\n'
+            # 清 LuCI 缓存
+            printf 'rm -f /tmp/luci-indexcache /tmp/luci-indexcache.*\n'
             printf 'rm -rf /tmp/luci-modulecache/\n'
+            # reload rpcd 以生效新 ACL
+            printf '/etc/init.d/rpcd reload 2>/dev/null || true\n'
+            # reload uhttpd 让 LuCI 重新加载 controller
+            printf '/etc/init.d/uhttpd reload 2>/dev/null || /etc/init.d/uhttpd restart 2>/dev/null || true\n'
             printf 'exit 0\n'
           } > "$luci_ctl/postinst"
           chmod 755 "$luci_ctl/postinst"
