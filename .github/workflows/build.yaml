@@ -827,7 +827,7 @@ jobs:
           SRC="assets/images/icon.png"
           ICONSET="macos/Runner/Assets.xcassets/AppIcon.appiconset"
           for SIZE in 16 32 64 128 256 512 1024; do
-            sips -z $SIZE $SIZE "$SRC" --out "$ICONSET/app_icon_${SIZE}.png" --resampleFilter lanczos > /dev/null
+            sips -z $SIZE $SIZE "$SRC" --out "$ICONSET/app_icon_${SIZE}.png" > /dev/null
           done
           echo "macOS icons regenerated from $SRC"
           ls -lh "$ICONSET"/*.png
