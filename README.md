@@ -49,6 +49,19 @@ uci commit mihomo
 http://<router-ip>:9090/ui
 ```
 
+## Server (Xboard / V2Board)
+
+Airport operators (机场主) drop [`server/Apex.php`](server/Apex.php) into their panel's `app/Protocols/` directory to enable encrypted subscription delivery for the Apex client.
+
+```bash
+wget https://raw.githubusercontent.com/dreamrer/mihomo-build/main/server/Apex.php \
+     -O /www/wwwroot/your-panel/app/Protocols/Apex.php
+```
+
+Then open the file and fill in `private $encryptKey = '';` with the value from your build-bot config (Telegram bot → 「查看加密密钥」). Without the key the protocol throws on every request — clients will see an empty node list.
+
+The client appends `?flag=apex` to subscription URLs automatically, so panel admins do not need to expose any new endpoint.
+
 ## Build
 
 Builds are triggered via GitHub Actions:
