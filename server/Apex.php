@@ -16,7 +16,21 @@ use Symfony\Component\Yaml\Yaml;
 
 trait ApexCore
 {
-    // ⚠ 不要修改：客户端硬编码请求 ?flag=apex，改了就匹配不到本协议，订阅会失效
+    /*
+    |--------------------------------------------------------------------------
+    | 必填：客户端 flag（必须与 Telegram 打包机器人里 APEX_FLAG 一致）
+    |--------------------------------------------------------------------------
+    | 取值规则：
+    |   • 用打包机器人**默认 UA**（`Apex/v{版本号}`）→ 这里填 `'apex'`（已经填好）
+    |   • 自定义 UA 例 `MyVPN/v1.0`             → 这里填 `'myvpn'`
+    |   • 自定义 UA 例 `SpeedUp 2024`           → 这里填 `'speedup'`
+    |
+    | 不知道填什么 → 打开 Telegram 打包机器人 → 「查看加密密钥」里也会同时
+    | 显示当前配置对应的 flag 值，照着粘进去即可。
+    |
+    | flag 值与客户端不一致 → 服务端会 fallback 到通用订阅（base64 URI 列表），
+    | 客户端拉到非加密内容报错，节点列表为空。
+    */
     public $flag = 'apex';
 
     /*
@@ -564,7 +578,7 @@ if (class_exists('App\\Support\\AbstractProtocol')) {
     class Apex extends \App\Support\AbstractProtocol
     {
         use ApexCore;
-        // ⚠ 不要修改：客户端硬编码请求 ?flag=apex，改了就匹配不到本协议
+        // 与上面 trait 里的 $flag 保持一致（Xboard 用 $flags 数组，v2board 用 $flag 字符串）
         public $flags = ['apex'];
     }
 } else {

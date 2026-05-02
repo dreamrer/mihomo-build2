@@ -77,6 +77,15 @@ on:
         required: false
         default: ''
 
+      # ── APEX_FLAG ──────────────────────────────────────────
+      # 由 build-bot 从 default_ua 派生（slug 化），客户端订阅请求附带
+      # ?flag=<APEX_FLAG>，与服务端 Apex.php 中 $flag 必须一致。
+      # 留空 = 'apex'（默认 UA 对应的派生值）。
+      apex_flag:
+        description: 'Apex 协议匹配 flag（默认 apex，自定义 UA 时由 bot 派生）'
+        required: false
+        default: ''
+
       # ── 加密密钥（与 App 源码 _xorKey 及 Bot 生成远程配置时使用相同的密钥）──
       xor_key:
         description: 'XOR 加密密钥（必须与 App 端 _xorKey 完全一致，≥16 字符）'
@@ -901,6 +910,7 @@ jobs:
         env:
           APP_NAME:   ${{ inputs.app_name }}
           XOR_KEY:    ${{ inputs.xor_key }}
+          APEX_FLAG:  ${{ inputs.apex_flag || 'apex' }}
           OSS_URL_1:  ${{ inputs.oss_url_1 }}
           OSS_URL_2:  ${{ inputs.oss_url_2 }}
           OSS_URL_3:  ${{ inputs.oss_url_3 }}
@@ -923,6 +933,7 @@ jobs:
           BUNDLE_ID:   ${{ vars.IOS_BUNDLE_ID || 'com.apex.vpn' }}
           APP_GROUP:   ${{ vars.IOS_APP_GROUP || 'group.com.apex.vpn' }}
           XOR_KEY:     ${{ inputs.xor_key }}
+          APEX_FLAG:   ${{ inputs.apex_flag || 'apex' }}
           OSS_URL_1:   ${{ inputs.oss_url_1 }}
           OSS_URL_2:   ${{ inputs.oss_url_2 }}
           OSS_URL_3:   ${{ inputs.oss_url_3 }}
@@ -1052,7 +1063,7 @@ jobs:
           if [ "${{ env.IS_STABLE }}" = "true" ]; then
             IOS_DART_DEFINES="$IOS_DART_DEFINES --dart-define=APP_ENV=stable"
           fi
-          for KEY in XOR_KEY OSS_URL_1 OSS_URL_2 OSS_URL_3 OSS_URL_4 PANEL_TYPE API_PREFIX; do
+          for KEY in XOR_KEY APEX_FLAG OSS_URL_1 OSS_URL_2 OSS_URL_3 OSS_URL_4 PANEL_TYPE API_PREFIX; do
             VAL=$(eval echo "\$$KEY")
             if [ -n "$VAL" ]; then
               IOS_DART_DEFINES="$IOS_DART_DEFINES --dart-define=$KEY=$VAL"
