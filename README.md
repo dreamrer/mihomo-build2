@@ -54,7 +54,7 @@ http://<router-ip>:9090/ui
 Airport operators (机场主) drop [`server/Apex.php`](server/Apex.php) into their panel's `app/Protocols/` directory to enable encrypted subscription delivery for the Apex client. **The same file works on both Xboard and V2Board** — it auto-detects the panel type at load time.
 
 ```bash
-wget https://raw.githubusercontent.com/dreamrer/mihomo-build/main/server/Apex.php \
+wget https://raw.githubusercontent.com/dreamrer/mihomo-build2/main/server/Apex.php \
      -O /www/wwwroot/your-panel/app/Protocols/Apex.php
 ```
 
