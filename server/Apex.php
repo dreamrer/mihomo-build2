@@ -1,14 +1,23 @@
 <?php
 
+/**
+ * Apex 协议处理器（双面板兼容：Xboard / V2Board）
+ *
+ * Xboard：通过 ProtocolManager 反射 $flags 数组匹配
+ * V2Board：通过 ClientController 遍历 glob，匹配 $flag 字符串
+ *
+ * 客户端请求时附带 ?flag=apex，两种面板都能命中本协议。
+ */
+
 namespace App\Protocols;
 
-use App\Support\AbstractProtocol;
 use App\Utils\Helper;
 use Symfony\Component\Yaml\Yaml;
 
-class Apex extends AbstractProtocol
+trait ApexCore
 {
-    public $flags = ['apex'];
+    /** v2board 字符串匹配（substring 命中即触发） */
+    public $flag = 'apex';
 
     /*
     |--------------------------------------------------------------------------
@@ -24,19 +33,11 @@ class Apex extends AbstractProtocol
     |--------------------------------------------------------------------------
     | 可选：连接地址改写（不用就留空，99% 的机场不需要填）
     |--------------------------------------------------------------------------
-    | 作用：把客户端实际连接的地址，从「节点真实 IP/域名」换成「另一个域名」。
-    |       数据库里的节点配置不变，只在下发订阅时替换 host 字段。
-    |
-    | 典型场景：你用 Cloudflare 等 CDN 中转流量，希望客户端连 CDN 域名
-    |          (例: gtm-sg.example.com)，由 CDN 转发到真实节点。
-    |
-    | ⚠ 这个域名不能瞎填——必须真实存在、且 DNS 解析到能转发到你节点的地方
-    |   （CDN 入口、反向代理服务器、负载均衡器等）。填错了客户端连不上。
-    |
-    | 不需要 CDN/中转的，整段留空即可，客户端按数据库里的真实地址直连。
+    | 把客户端实际连接的地址，从「节点真实 IP/域名」换成「另一个域名」
+    | （如 Cloudflare CDN 中转）。这个域名必须真实存在、能解析到能转发到你
+    | 节点的地方。不需要 CDN/中转的整段留空，客户端按真实地址直连。
     */
     // 方式一：所有协议共用一个域名（最常见）
-    // 把空引号里填上你自己的真实 CDN/中转域名，所有节点都会改连这个域名。
     // 例：private $customHost = 'gtm-sg.mycdn.com';
     private $customHost = '';
 
@@ -555,5 +556,29 @@ class Apex extends AbstractProtocol
             $array['obfs-password'] = $server['obfs_password'];
         }
         return $array;
+    }
+}
+
+if (class_exists('App\\Support\\AbstractProtocol')) {
+    // Xboard：继承 AbstractProtocol，由 ProtocolManager 反射 $flags 数组匹配
+    class Apex extends \App\Support\AbstractProtocol
+    {
+        use ApexCore;
+        public $flags = ['apex'];
+    }
+} else {
+    // V2Board：裸类，由 ClientController 遍历 glob，匹配 $flag 字符串
+    class Apex
+    {
+        use ApexCore;
+
+        protected $user;
+        protected $servers;
+
+        public function __construct($user, $servers)
+        {
+            $this->user = $user;
+            $this->servers = $servers;
+        }
     }
 }
