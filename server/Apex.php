@@ -16,7 +16,7 @@ use Symfony\Component\Yaml\Yaml;
 
 trait ApexCore
 {
-    /** v2board 字符串匹配（substring 命中即触发） */
+    // ⚠ 不要修改：客户端硬编码请求 ?flag=apex，改了就匹配不到本协议，订阅会失效
     public $flag = 'apex';
 
     /*
@@ -564,6 +564,7 @@ if (class_exists('App\\Support\\AbstractProtocol')) {
     class Apex extends \App\Support\AbstractProtocol
     {
         use ApexCore;
+        // ⚠ 不要修改：客户端硬编码请求 ?flag=apex，改了就匹配不到本协议
         public $flags = ['apex'];
     }
 } else {
