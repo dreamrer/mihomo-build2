@@ -92,6 +92,12 @@ on:
         required: false
         default: ''
 
+      # ── 延迟显示美化（可选）─────────────────────────────────
+      delay_discount:
+        description: '节点延迟显示打折百分比（0–90，仅影响 UI；选路仍用真实延迟）。留空=不打折'
+        required: false
+        default: ''
+
       # ── 客服 & 联系方式（写入远程配置，不烧录进包）─────────
       telegram_channel:
         description: 'TG 订阅频道（如 https://t.me/jichangbiji，写入远程配置）'
@@ -917,6 +923,7 @@ jobs:
           OSS_URL_4:  ${{ inputs.oss_url_4 }}
           PANEL_TYPE: ${{ inputs.panel_type || 'xboard' }}
           API_PREFIX: ${{ inputs.api_prefix || '/api/v1' }}
+          DELAY_DISCOUNT: ${{ inputs.delay_discount }}
           ANDROID_FLAVOR: ${{ matrix.flavor || '' }}
         run: |
           dart setup.dart ${{ matrix.platform }} \
@@ -940,6 +947,7 @@ jobs:
           OSS_URL_4:   ${{ inputs.oss_url_4 }}
           PANEL_TYPE:  ${{ inputs.panel_type || 'xboard' }}
           API_PREFIX:  ${{ inputs.api_prefix || '/api/v1' }}
+          DELAY_DISCOUNT: ${{ inputs.delay_discount }}
         run: |
           set -e
 
@@ -1063,7 +1071,7 @@ jobs:
           if [ "${{ env.IS_STABLE }}" = "true" ]; then
             IOS_DART_DEFINES="$IOS_DART_DEFINES --dart-define=APP_ENV=stable"
           fi
-          for KEY in XOR_KEY APEX_FLAG OSS_URL_1 OSS_URL_2 OSS_URL_3 OSS_URL_4 PANEL_TYPE API_PREFIX; do
+          for KEY in XOR_KEY APEX_FLAG OSS_URL_1 OSS_URL_2 OSS_URL_3 OSS_URL_4 PANEL_TYPE API_PREFIX DELAY_DISCOUNT; do
             VAL=$(eval echo "\$$KEY")
             if [ -n "$VAL" ]; then
               IOS_DART_DEFINES="$IOS_DART_DEFINES --dart-define=$KEY=$VAL"
