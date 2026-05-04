@@ -669,16 +669,29 @@ trait ApexCore
 
     private function buildHysteria2($password, $server)
     {
-        $tlsSettings = $server['tls_settings'] ?? [];
+        // Xboard 的 hy2 把 tls / obfs / bandwidth 都嵌套在 protocol_settings 下：
+        //   protocol_settings:
+        //     tls:       { server_name, allow_insecure }
+        //     obfs:      { open, type, password }
+        //     bandwidth: { up, down }
+        // 顶层 hoist 后 $server['tls'] / $server['obfs'] 是 array（**不是** scalar）。
+        // v2board 把同样字段全平铺到 $server 顶层（tls_settings / obfs / obfs_password）。
+        // 这里两套 schema 都要兼容，否则 Xboard 节点 sni/obfs 全空 → QUIC 握手不上来。
+        $tls = (is_array($server['tls'] ?? null) ? $server['tls'] : [])
+            + ($server['tls_settings'] ?? []);
+        $sni = $tls['server_name'] ?? $tls['serverName'] ?? '';
+        $skip = (bool) ($tls['allow_insecure'] ?? false);
+
         $array = [
             'name' => $server['name'],
             'type' => 'hysteria2',
             'server' => $server['host'],
             'password' => $password,
-            'skip-cert-verify' => ($tlsSettings['allow_insecure'] ?? 0) == 1,
-            'sni' => $tlsSettings['server_name'] ?? '',
+            'skip-cert-verify' => $skip,
+            'sni' => $sni,
             'udp' => true,
         ];
+
         $parts = explode(',', $server['port']);
         $firstPart = $parts[0];
         if (strpos($firstPart, '-') !== false) {
@@ -692,10 +705,36 @@ trait ApexCore
             $array['ports'] = $server['port'];
             $array['mport'] = $server['port'];
         }
-        if (isset($server['obfs'])) {
-            $array['obfs'] = $server['obfs'];
-            $array['obfs-password'] = $server['obfs_password'];
+
+        // obfs：Xboard = ['open'=>true,'type'=>'salamander','password'=>'xxx']（嵌套）
+        //       v2board = 顶层 'obfs' 字符串 + 顶层 'obfs_password' 字符串
+        $obfsRaw = $server['obfs'] ?? null;
+        if (is_array($obfsRaw)) {
+            // Xboard：open=false 时不下发 obfs，否则握手会带上 server 没启用的 obfs 反而失败
+            if (!empty($obfsRaw['open']) && !empty($obfsRaw['type'])) {
+                $array['obfs'] = $obfsRaw['type'];
+                $array['obfs-password'] = $obfsRaw['password'] ?? '';
+            }
+        } elseif (is_string($obfsRaw) && $obfsRaw !== '') {
+            // v2board
+            $array['obfs'] = $obfsRaw;
+            $array['obfs-password'] = $server['obfs_password'] ?? '';
         }
+
+        // bandwidth：仅 Xboard 有；v2board 没这个字段，hy2 客户端在缺失时会用 brutal 探测
+        $bw = $server['bandwidth'] ?? [];
+        if (!empty($bw['up'])) {
+            $array['up'] = $bw['up'];
+        }
+        if (!empty($bw['down'])) {
+            $array['down'] = $bw['down'];
+        }
+
+        // 端口跳跃区间需要客户端定时换端口，Xboard 在 protocol_settings.hop_interval 配置
+        if (!empty($server['hop_interval'])) {
+            $array['hop-interval'] = (int) $server['hop_interval'];
+        }
+
         return $array;
     }
 
