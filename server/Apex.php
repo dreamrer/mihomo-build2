@@ -12,7 +12,7 @@
 |
 |  【必改 2，仅当你在打包机器人改过 UA】协议 flag  ($flag + $flags)
 |     ★ 跳到第 61 行 ★    public $flag = 'apex';
-|     ★ 跳到第 760 行 ★   public $flags = ['apex'];
+|     ★ 跳到第 810 行 ★   public $flags = ['apex'];
 |     ⚠ 这两处必须同时改成同一个值！
 |     - 用打包机器人**默认 UA**（Apex/v版本号） → 都填 'apex'，已经填好，不动
 |     - 自定义 UA 例 `MyVPN/v1`               → 都填 'myvpn'
