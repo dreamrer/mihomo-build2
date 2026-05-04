@@ -84,8 +84,8 @@ proxies:
 # $app_name 会被服务端替换为面板的应用名
 proxy-groups:
   - { name: $app_name, type: select, proxies: ["自动选择", "故障转移"] }
-  - { name: 自动选择, type: url-test, proxies: [], url: "http://www.gstatic.com/generate_204", interval: 300, tolerance: 50 }
-  - { name: 故障转移, type: fallback, proxies: [], url: "http://www.gstatic.com/generate_204", interval: 300 }
+  - { name: 自动选择, type: url-test, proxies: [], url: "http://cp.cloudflare.com/generate_204", interval: 300, tolerance: 50 }
+  - { name: 故障转移, type: fallback, proxies: [], url: "http://cp.cloudflare.com/generate_204", interval: 300 }
 
 # ============================== 规则 ==============================
 # 简化版 —— 用 geosite/geoip 分类代替几百行手写域名。
