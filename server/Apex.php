@@ -113,12 +113,23 @@ trait ApexCore
         header("content-disposition:attachment;filename*=UTF-8''" . rawurlencode($appName));
         header('profile-web-page-url:' . config('v2board.app_url'));
 
-        $defaultConfig = base_path() . '/resources/rules/default.clash.yaml';
-        $customConfig = base_path() . '/resources/rules/custom.clash.yaml';
-        if (\File::exists($customConfig)) {
-            $config = Yaml::parseFile($customConfig);
-        } else {
-            $config = Yaml::parseFile($defaultConfig);
+        // 模板加载优先级：
+        //   1. Xboard 数据库里的 clashmeta 模板（机场主在管理后台编辑的版本）
+        //   2. resources/rules/custom.clash.yaml（v2board / Xboard 通用，机场主自己放的）
+        //   3. resources/rules/default.clash.yaml（v2board / Xboard 出厂模板）
+        $config = null;
+        if (class_exists('App\\Models\\SubscribeTemplate')) {
+            // Xboard：从 v2_subscribe_templates 表读机场主在后台编辑的 clashmeta 模板
+            $template = \App\Models\SubscribeTemplate::getContent('clashmeta');
+            if (!empty(trim($template ?? ''))) {
+                $config = Yaml::parse($template);
+            }
+        }
+        if ($config === null) {
+            $customConfig = base_path() . '/resources/rules/custom.clash.yaml';
+            $defaultConfig = base_path() . '/resources/rules/default.clash.yaml';
+            $path = \File::exists($customConfig) ? $customConfig : $defaultConfig;
+            $config = Yaml::parseFile($path);
         }
 
         $servers = $this->applyCustomHost($servers);
