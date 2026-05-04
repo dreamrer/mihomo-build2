@@ -1,12 +1,39 @@
 <?php
 
+/*
+|==============================================================================
+|  ★★★  机场主请先看这里：你只需要改 1~2 个地方  ★★★
+|==============================================================================
+|
+|  【必改 1】加密密钥  ($encryptKey)
+|     ★ 跳到第 71 行 ★    private $encryptKey = '';
+|     去 Telegram 打包机器人 → 选你的配置 → 「查看加密密钥」复制粘贴。
+|     不改 → 客户端拉到的订阅解不出 → 节点列表为空。
+|
+|  【必改 2，仅当你在打包机器人改过 UA】协议 flag  ($flag + $flags)
+|     ★ 跳到第 61 行 ★    public $flag = 'apex';
+|     ★ 跳到第 760 行 ★   public $flags = ['apex'];
+|     ⚠ 这两处必须同时改成同一个值！
+|     - 用打包机器人**默认 UA**（Apex/v版本号） → 都填 'apex'，已经填好，不动
+|     - 自定义 UA 例 `MyVPN/v1`               → 都填 'myvpn'
+|     - 不知道填什么 → 打包机器人「查看加密密钥」会同时显示 flag 值，照抄即可。
+|
+|  【可选】CDN 中转域名  ($customHost / $customHostByType)
+|     ★ 跳到第 83 行 ★   private $customHost = '';
+|     ★ 跳到第 89 行 ★   private $customHostByType = [...];
+|     99% 机场不用，留空即可。要用 CDN 中转才填。
+|
+|  其他所有代码无需修改——v2board 和 Xboard 面板自动适配。
+|==============================================================================
+*/
+
 /**
  * Apex 协议处理器（双面板兼容：Xboard / V2Board）
  *
  * Xboard：通过 ProtocolManager 反射 $flags 数组匹配
  * V2Board：通过 ClientController 遍历 glob，匹配 $flag 字符串
  *
- * 客户端请求时附带 ?flag=apex，两种面板都能命中本协议。
+ * 客户端请求时附带 ?flag=<APEX_FLAG>（默认 apex），两种面板都能命中本协议。
  */
 
 namespace App\Protocols;
@@ -71,7 +98,8 @@ trait ApexCore
     ];
 
     // ─── 以下为协议实现，无需修改 ───────────────────────────────────
-
+    // ─── 以下为协议实现，无需修改 ───────────────────────────────────
+    // ─── 以下为协议实现，无需修改 ───────────────────────────────────
     private $enableEncryption = true;
 
     public function handle()
@@ -99,40 +127,65 @@ trait ApexCore
         $proxies = [];
 
         foreach ($servers as $item) {
+            // Xboard 把 tls / network / network_settings / tls_settings 等嵌套在
+            // $item['protocol_settings'] 下，v2board 全平铺到 $item 顶层。
+            // 为了让下面的 build* 函数（按 v2board 平铺结构写的）两边都跑，
+            // 把 protocol_settings 平铺到顶层一份，已有 key 不覆盖。
+            if (isset($item['protocol_settings']) && is_array($item['protocol_settings'])) {
+                $item = $item + $item['protocol_settings'];
+            }
+
+            // Xboard 给每个节点预计算了 $item['password'] 作为认证凭据；
+            // v2board 不预算，所有节点共用 $user['uuid']。
+            $secret = $item['password'] ?? $user['uuid'];
+
             if (($item['type'] ?? null) === 'v2node' && isset($item['protocol'])) {
                 $item['type'] = $item['protocol'];
             }
             switch ($item['type']) {
                 case 'shadowsocks':
-                    $proxy[] = self::buildShadowsocks($user['uuid'], $item);
+                    $proxy[] = self::buildShadowsocks($secret, $item);
                     $proxies[] = $item['name'];
                     break;
                 case 'vmess':
-                    $proxy[] = self::buildVmess($user['uuid'], $item);
+                    $proxy[] = self::buildVmess($secret, $item);
                     $proxies[] = $item['name'];
                     break;
                 case 'vless':
-                    $proxy[] = self::buildVless($user['uuid'], $item);
+                    $proxy[] = self::buildVless($secret, $item);
                     $proxies[] = $item['name'];
                     break;
                 case 'trojan':
-                    $proxy[] = self::buildTrojan($user['uuid'], $item);
+                    $proxy[] = self::buildTrojan($secret, $item);
                     $proxies[] = $item['name'];
                     break;
                 case 'tuic':
-                    $proxy[] = self::buildTuic($user['uuid'], $item);
+                    $proxy[] = self::buildTuic($secret, $item);
                     $proxies[] = $item['name'];
                     break;
                 case 'anytls':
-                    $proxy[] = self::buildAnyTLS($user['uuid'], $item);
+                    $proxy[] = self::buildAnyTLS($secret, $item);
                     $proxies[] = $item['name'];
                     break;
                 case 'hysteria':
-                    $proxy[] = self::buildHysteria($user['uuid'], $item);
+                    $proxy[] = self::buildHysteria($secret, $item);
                     $proxies[] = $item['name'];
                     break;
                 case 'hysteria2':
-                    $proxy[] = $this->buildHysteria2($user['uuid'], $item);
+                    $proxy[] = $this->buildHysteria2($secret, $item);
+                    $proxies[] = $item['name'];
+                    break;
+                // Xboard 独有的 3 种协议；v2board 没有这几种节点类型，case 永远不命中也无害。
+                case 'socks':
+                    $proxy[] = self::buildSocks5($secret, $item);
+                    $proxies[] = $item['name'];
+                    break;
+                case 'http':
+                    $proxy[] = self::buildHttp($secret, $item);
+                    $proxies[] = $item['name'];
+                    break;
+                case 'mieru':
+                    $proxy[] = self::buildMieru($secret, $item);
                     $proxies[] = $item['name'];
                     break;
             }
@@ -198,6 +251,46 @@ trait ApexCore
         }
 
         return base64_encode($xored);
+    }
+
+    /**
+     * 把 tls_settings.ech 的 'cloudflare' / 'custom' 配置翻译成 mihomo 的 ech-opts 字段。
+     * 不开 ECH 时不写任何字段。
+     */
+    private static function applyEch(array &$array, ?array $tlsSettings): void
+    {
+        if (empty($tlsSettings['ech'])) {
+            return;
+        }
+        if ($tlsSettings['ech'] === 'cloudflare') {
+            $array['ech-opts'] = [
+                'enable' => true,
+                'query-server-name' => 'cloudflare-ech.com',
+            ];
+        } elseif ($tlsSettings['ech'] === 'custom' && !empty($tlsSettings['ech_config'])) {
+            $array['ech-opts'] = [
+                'enable' => true,
+                'config' => is_array($tlsSettings['ech_config'])
+                    ? $tlsSettings['ech_config']
+                    : [$tlsSettings['ech_config']],
+            ];
+        }
+    }
+
+    /**
+     * xhttp 传输层（VLESS Reality / VLESS XTLS Vision over HTTP/2 多路复用）。
+     */
+    private static function applyXhttp(array &$array, $server): void
+    {
+        $xhttpSettings = $server['network_settings'] ?? ($server['networkSettings'] ?? null);
+        if (!$xhttpSettings) {
+            $array['xhttp-opts'] = [];
+            return;
+        }
+        $array['xhttp-opts'] = [];
+        if (isset($xhttpSettings['path'])) $array['xhttp-opts']['path'] = $xhttpSettings['path'];
+        if (isset($xhttpSettings['host'])) $array['xhttp-opts']['host'] = $xhttpSettings['host'];
+        if (isset($xhttpSettings['mode'])) $array['xhttp-opts']['mode'] = $xhttpSettings['mode'];
     }
 
     private function applyCustomHost(array $servers): array
@@ -292,19 +385,24 @@ trait ApexCore
 
         if (!empty($server['tls'])) {
             $array['tls'] = true;
-            $tlsSettings = $server['tlsSettings'] ?? ($server['tls_settings'] ?? null);
+            // v2board 数据库存 snake_case (tls_settings.server_name / allow_insecure)，
+            // 老配置可能是 camelCase。两种都兜住，否则 SNI 缺失会导致 TLS 证书校验失败。
+            $tlsSettings = $server['tls_settings'] ?? ($server['tlsSettings'] ?? null);
             if ($tlsSettings) {
-                if (isset($tlsSettings['allowInsecure']) && !empty($tlsSettings['allowInsecure'])) {
-                    $array['skip-cert-verify'] = ($tlsSettings['allowInsecure'] ? true : false);
+                $allowInsecure = $tlsSettings['allow_insecure'] ?? $tlsSettings['allowInsecure'] ?? null;
+                if ($allowInsecure !== null) {
+                    $array['skip-cert-verify'] = ((int) $allowInsecure) === 1;
                 }
-                if (isset($tlsSettings['serverName']) && !empty($tlsSettings['serverName'])) {
-                    $array['servername'] = $tlsSettings['serverName'];
+                $serverName = $tlsSettings['server_name'] ?? $tlsSettings['serverName'] ?? null;
+                if (!empty($serverName)) {
+                    $array['servername'] = $serverName;
                 }
+                self::applyEch($array, $tlsSettings);
             }
         }
         $network = $server['network'] ?? null;
         if ($network === 'tcp') {
-            $tcpSettings = $server['networkSettings'] ?? ($server['network_settings'] ?? []);
+            $tcpSettings = $server['network_settings'] ?? ($server['networkSettings'] ?? []);
             if (isset($tcpSettings['header']['type']) && $tcpSettings['header']['type'] == 'http') {
                 $array['network'] = $tcpSettings['header']['type'];
                 if (isset($tcpSettings['header']['request']['headers']['Host'])) {
@@ -317,7 +415,7 @@ trait ApexCore
         }
         if ($network === 'ws') {
             $array['network'] = 'ws';
-            $wsSettings = $server['networkSettings'] ?? ($server['network_settings'] ?? null);
+            $wsSettings = $server['network_settings'] ?? ($server['networkSettings'] ?? null);
             if ($wsSettings) {
                 $array['ws-opts'] = [];
                 if (isset($wsSettings['path']) && !empty($wsSettings['path'])) {
@@ -333,11 +431,14 @@ trait ApexCore
         }
         if ($network === 'grpc') {
             $array['network'] = 'grpc';
-            $grpcSettings = $server['networkSettings'] ?? ($server['network_settings'] ?? null);
+            $grpcSettings = $server['network_settings'] ?? ($server['networkSettings'] ?? null);
             if ($grpcSettings) {
                 $array['grpc-opts'] = [];
-                if (isset($grpcSettings['serviceName'])) {
-                    $array['grpc-opts']['grpc-service-name'] = $grpcSettings['serviceName'];
+                // 同时兜底 snake_case (service_name) 和 camelCase (serviceName)，
+                // 不同 v2board 前端版本写库的字段名不一样。
+                $serviceName = $grpcSettings['service_name'] ?? $grpcSettings['serviceName'] ?? null;
+                if (!empty($serviceName)) {
+                    $array['grpc-opts']['grpc-service-name'] = $serviceName;
                 }
             }
         }
@@ -370,6 +471,7 @@ trait ApexCore
                     $array['reality-opts']['public-key'] = $tlsSettings['public_key'];
                     $array['reality-opts']['short-id'] = $tlsSettings['short_id'];
                 }
+                self::applyEch($array, $tlsSettings);
             }
         }
 
@@ -404,10 +506,18 @@ trait ApexCore
             if ($server['network_settings']) {
                 $grpcSettings = $server['network_settings'];
                 $array['grpc-opts'] = [];
-                if (isset($grpcSettings['serviceName'])) {
-                    $array['grpc-opts']['grpc-service-name'] = $grpcSettings['serviceName'];
+                // 同时兜底 snake_case (service_name) 和 camelCase (serviceName)，
+                // 不同 v2board 前端版本写库的字段名不一样。
+                $serviceName = $grpcSettings['service_name'] ?? $grpcSettings['serviceName'] ?? null;
+                if (!empty($serviceName)) {
+                    $array['grpc-opts']['grpc-service-name'] = $serviceName;
                 }
             }
+        }
+
+        if ($server['network'] === 'xhttp') {
+            $array['network'] = 'xhttp';
+            self::applyXhttp($array, $server);
         }
 
         if (isset($server['encryption']) && !empty($server['encryption'])
@@ -436,8 +546,12 @@ trait ApexCore
         $array['udp'] = true;
         if (isset($server['network']) && in_array($server['network'], ['grpc', 'ws'])) {
             $array['network'] = $server['network'];
-            if ($server['network'] === 'grpc' && isset($server['network_settings']['serviceName'])) {
-                $array['grpc-opts']['grpc-service-name'] = $server['network_settings']['serviceName'];
+            if ($server['network'] === 'grpc') {
+                $ns = $server['network_settings'] ?? [];
+                $serviceName = $ns['service_name'] ?? $ns['serviceName'] ?? null;
+                if (!empty($serviceName)) {
+                    $array['grpc-opts']['grpc-service-name'] = $serviceName;
+                }
             }
             if ($server['network'] === 'ws') {
                 if (isset($server['network_settings']['path'])) {
@@ -451,6 +565,7 @@ trait ApexCore
         $tlsSettings = $server['tls_settings'] ?? [];
         $array['sni'] = $server['server_name'] ?? ($tlsSettings['server_name'] ?? '');
         $array['skip-cert-verify'] = ($server['allow_insecure'] ?? ($tlsSettings['allow_insecure'] ?? 0)) == 1;
+        self::applyEch($array, $tlsSettings);
         return $array;
     }
 
@@ -490,6 +605,7 @@ trait ApexCore
         $tlsSettings = $server['tls_settings'] ?? [];
         $array['sni'] = $server['server_name'] ?? ($tlsSettings['server_name'] ?? '');
         $array['skip-cert-verify'] = ($server['insecure'] ?? ($tlsSettings['allow_insecure'] ?? 0)) == 1;
+        self::applyEch($array, $tlsSettings);
         return $array;
     }
 
@@ -571,6 +687,63 @@ trait ApexCore
         }
         return $array;
     }
+
+    // ─── Xboard 独有协议（v2board 没有这几种节点）──────────────────────
+
+    public static function buildSocks5($password, $server)
+    {
+        $array = [
+            'name' => $server['name'],
+            'type' => 'socks5',
+            'server' => $server['host'],
+            'port' => $server['port'],
+            'udp' => true,
+            'username' => $password,
+            'password' => $password,
+        ];
+        if (!empty($server['tls'])) {
+            $array['tls'] = true;
+            $tlsSettings = $server['tls_settings'] ?? [];
+            $array['skip-cert-verify'] = (bool) ($tlsSettings['allow_insecure'] ?? false);
+        }
+        return $array;
+    }
+
+    public static function buildHttp($password, $server)
+    {
+        $array = [
+            'name' => $server['name'],
+            'type' => 'http',
+            'server' => $server['host'],
+            'port' => $server['port'],
+            'username' => $password,
+            'password' => $password,
+        ];
+        if (!empty($server['tls'])) {
+            $array['tls'] = true;
+            $tlsSettings = $server['tls_settings'] ?? [];
+            $array['skip-cert-verify'] = (bool) ($tlsSettings['allow_insecure'] ?? false);
+        }
+        return $array;
+    }
+
+    public static function buildMieru($password, $server)
+    {
+        $array = [
+            'name' => $server['name'],
+            'type' => 'mieru',
+            'server' => $server['host'],
+            'port' => $server['port'],
+            'username' => $password,
+            'password' => $password,
+            'transport' => strtoupper($server['transport'] ?? 'TCP'),
+        ];
+        // Xboard ServerService 在端口范围模式下会把原始 'a-b' 字符串放到 ports 字段
+        if (isset($server['ports'])) {
+            $array['port-range'] = $server['ports'];
+        }
+        return $array;
+    }
 }
 
 if (class_exists('App\\Support\\AbstractProtocol')) {
@@ -578,7 +751,12 @@ if (class_exists('App\\Support\\AbstractProtocol')) {
     class Apex extends \App\Support\AbstractProtocol
     {
         use ApexCore;
-        // 与上面 trait 里的 $flag 保持一致（Xboard 用 $flags 数组，v2board 用 $flag 字符串）
+        // ⚠️ 必须和 trait 里 public $flag = '...' 保持一致！
+        //   v2board 用 $flag 字符串匹配，Xboard 用 $flags 数组匹配，
+        //   两个值不同步会导致只有其中一种面板能命中本协议。
+        //   改 $flag 的同时务必把这里也改成同样的值，例如：
+        //     trait:  public $flag = 'myvpn';
+        //     这里:   public $flags = ['myvpn'];
         public $flags = ['apex'];
     }
 } else {
