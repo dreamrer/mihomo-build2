@@ -1,25 +1,20 @@
 # =============================================================================
 #  Apex 推荐 Clash 配置模板  (适用于 v2board / Xboard 面板)
 # =============================================================================
+#  本模板**只修改 DNS 段**，其余字段全部沿用面板出厂默认结构，确保 mihomo
+#  各版本都能成功加载。激进特性（sniffer / geo-auto-update /
+#  nameserver-policy 高级语法 / 生僻 geosite 分类）一律删掉避免解析失败。
+#
 #  ★ v2board ★（模板存文件系统）
 #    cp /www/wwwroot/v2board/resources/rules/default.clash.yaml{,.bak}
-#    wget https://raw.githubusercontent.com/dreamrer/mihomo-build/main/server/default.clash.yaml \
+#    wget https://raw.githubusercontent.com/dreamrer/mihomo-build2/main/server/default.clash.yaml \
 #         -O /www/wwwroot/v2board/resources/rules/default.clash.yaml
 #    立即生效（无缓存）。
 #
 #  ★ Xboard ★（模板存数据库，文件不读）
 #    Xboard 后台 → 订阅设置 → 「clashmeta 模板」字段，把本文件内容整段粘进去保存。
-#    另外可选：把同一份内容也粘到「clash 模板」（兼容经典 Clash 老用户）。
 #    缓存 1 小时；要立即生效进 SSH 跑：
 #      redis-cli del 'subscribe_template:clashmeta'
-#
-#  比官方默认模板的改进点：
-#    1. DNS 全部改用 DoH/DoT，支持 SVCB 记录返回（ECH 节点必需）
-#    2. fake-ip + 完整 fake-ip-filter（避免局域网/QQ/微信走假 IP）
-#    3. 启用 sniffer（reality/xhttp/h2 节点必需，提升 fakeip 命中率）
-#    4. 用 geosite/geoip 分类规则代替几百行手写域名（自动跟上 GFW 名单）
-#    5. proxy-groups 增加 「负载均衡」 和 「直连」 选项
-#    6. url-test/fallback 间隔从 1 天/2 小时改成 5 分钟（节点掉线快速感知）
 #
 #  $app_name 占位符会被服务端替换为面板的应用名（保留即可，不要硬编码）
 # =============================================================================
@@ -29,75 +24,36 @@ allow-lan: true
 bind-address: "*"
 mode: rule
 log-level: warning
-ipv6: true
-unified-delay: true
-tcp-concurrent: true
-geodata-mode: true
-geo-auto-update: true
-geo-update-interval: 24
-geox-url:
-  geoip: "https://github.com/MetaCubeX/meta-rules-dat/releases/download/latest/geoip.dat"
-  geosite: "https://github.com/MetaCubeX/meta-rules-dat/releases/download/latest/geosite.dat"
-  mmdb: "https://github.com/MetaCubeX/meta-rules-dat/releases/download/latest/geoip.metadb"
-  asn: "https://github.com/MetaCubeX/meta-rules-dat/releases/download/latest/GeoLite2-ASN.mmdb"
+ipv6: false
 
-profile:
-  store-selected: true
-  store-fake-ip: true
-
-# ============================== 嗅探（关键）==============================
-# 没有 sniffer，fakeip 模式下基于域名的规则匹配会失效，xhttp/reality
-# 等节点协议也可能因为 SNI 缺失握手失败。
-sniffer:
-  enable: true
-  parse-pure-ip: true
-  override-destination: false
-  sniff:
-    HTTP:
-      ports: [80, 8080-8880]
-      override-destination: true
-    TLS:
-      ports: [443, 8443]
-    QUIC:
-      ports: [443, 8443]
-  skip-domain:
-    - "+.push.apple.com"
-    - "Mijia Cloud"
-    - "+.apple.com"
-
-# ============================== DNS（关键）==============================
+# ============================== DNS（唯一关键改动）==============================
 # 全部用 DoH/DoT，避免：
 #   - 国内 ISP 透明 DNS 劫持剥离 SVCB 记录（导致 ECH 节点拉不起来）
 #   - UDP-53 包大小截断（HTTPS/SVCB 记录通常 > 512 字节）
 #   - GFW 对境外域名 SVCB 查询的污染
+#   - 老模板 fallback 用明文境外 DNS（1.1.1.1 / 8.8.8.8）在国内 ISP 拦截下根本不通
 dns:
   enable: true
-  ipv6: true
-  prefer-h3: true
-  use-hosts: true
-  use-system-hosts: true
-  respect-rules: false
+  ipv6: false
   enhanced-mode: fake-ip
   fake-ip-range: 198.18.0.1/16
+  use-hosts: true
 
-  # default-nameserver 用于解析 nameserver 字段里那些 DoH/DoT 服务自身的域名。
-  # 这一步不能再走 DoH 否则鸡生蛋。明文 IP 即可。
+  # default-nameserver 解析下面 DoH/DoT 的域名，必须明文 IP 否则鸡生蛋
   default-nameserver:
     - 223.5.5.5
     - 119.29.29.29
 
-  # 主 DNS：境内 DoH，对国内域名友好且支持 SVCB
+  # 主 DNS：境内 DoH，对国内域名友好且支持 SVCB（ECH 必需）
   nameserver:
     - https://doh.pub/dns-query
     - https://dns.alidns.com/dns-query
 
-  # 兜底 DNS：境外 DoT/DoH，主 DNS 被劫持时启用
+  # 兜底：境外 DoH/DoT，加密通道国内 ISP 拦不住
   fallback:
     - https://1.1.1.1/dns-query
     - https://dns.google/dns-query
-    - tls://8.8.8.8
 
-  # 触发 fallback 的条件
   fallback-filter:
     geoip: true
     geoip-code: CN
@@ -105,144 +61,48 @@ dns:
       - gfw
     ipcidr:
       - 240.0.0.0/4
-      - 0.0.0.0/32
-    domain:
-      - "+.google.com"
-      - "+.facebook.com"
-      - "+.youtube.com"
-      - "+.github.com"
 
   # 节点服务器域名解析专用 —— 防止节点 host 被 fakeip 化导致连不上
   proxy-server-nameserver:
     - https://doh.pub/dns-query
     - https://dns.alidns.com/dns-query
 
-  # fakeip 排除项 —— 这些域名走真实 IP，不参与 fakeip 转换
   fake-ip-filter:
-    # 局域网
     - "+.lan"
     - "+.local"
     - "+.localdomain"
-    # 路由器后台
-    - "+.miwifi.com"
-    - "+.router.asus.com"
-    # 苹果推送（PUSH 必须用真实 IP）
     - "+.push.apple.com"
-    - "courier.push.apple.com"
-    # 微软 / GitHub Action
-    - "+.msftconnecttest.com"
     - "+.msftncsi.com"
-    # 腾讯 QQ / 微信
+    - "+.msftconnecttest.com"
     - "localhost.ptlogin2.qq.com"
-    - "localhost.sec.qq.com"
-    - "localhost.work.weixin.qq.com"
-    # NTP 时间同步
-    - "time.*.com"
-    - "time.*.gov"
-    - "time.*.edu.cn"
-    - "*.ntp.org.cn"
     - "+.pool.ntp.org"
-    - "ntp.*.com"
-    # Stun
-    - "+.stun.*.*"
-    - "+.stun.*.*.*"
-    - "+.stun.*.*.*.*"
-    # 直播 / 游戏
-    - "*.battlenet.com.cn"
-    - "*.battlenet.com"
-    - "*.blzstatic.cn"
-    - "*.battle.net"
-
-  # 中文域名/特定域名走特定 DNS
-  nameserver-policy:
-    "geosite:cn,private":
-      - https://doh.pub/dns-query
-      - https://dns.alidns.com/dns-query
-    "geosite:geolocation-!cn":
-      - https://1.1.1.1/dns-query
-      - https://dns.google/dns-query
 
 # ============================== 节点（由服务端注入）==============================
 proxies:
 
 # ============================== 代理组 ==============================
-# $app_name 会被服务端 Apex.php / ClashMeta.php 替换成面板的应用名
+# $app_name 会被服务端替换为面板的应用名
 proxy-groups:
-  - name: $app_name
-    type: select
-    proxies:
-      - 自动选择
-      - 故障转移
-      - 负载均衡
-      - 直连
-
-  - name: 自动选择
-    type: url-test
-    url: http://www.gstatic.com/generate_204
-    interval: 300
-    tolerance: 50
-    proxies: []
-
-  - name: 故障转移
-    type: fallback
-    url: http://www.gstatic.com/generate_204
-    interval: 300
-    proxies: []
-
-  - name: 负载均衡
-    type: load-balance
-    strategy: consistent-hashing
-    url: http://www.gstatic.com/generate_204
-    interval: 300
-    proxies: []
-
-  - name: 直连
-    type: select
-    proxies:
-      - DIRECT
+  - { name: $app_name, type: select, proxies: ["自动选择", "故障转移"] }
+  - { name: 自动选择, type: url-test, proxies: [], url: "http://www.gstatic.com/generate_204", interval: 300, tolerance: 50 }
+  - { name: 故障转移, type: fallback, proxies: [], url: "http://www.gstatic.com/generate_204", interval: 300 }
 
 # ============================== 规则 ==============================
-# 用 geosite/geoip 分类匹配代替几百行手写域名。
-# mihomo 会从 geox-url 自动下载分类数据并定时更新。
+# 简化版 —— 用 geosite/geoip 分类代替几百行手写域名。
+# mihomo 自带这些分类（geosite.dat / geoip.metadb），无需额外下载配置。
 rules:
-  # 局域网
+  # 局域网直连
   - DOMAIN-SUFFIX,local,DIRECT
-  - DOMAIN-SUFFIX,localhost,DIRECT
-  - IP-CIDR,127.0.0.0/8,DIRECT
-  - IP-CIDR,172.16.0.0/12,DIRECT
-  - IP-CIDR,192.168.0.0/16,DIRECT
-  - IP-CIDR,10.0.0.0/8,DIRECT
-  - IP-CIDR,17.0.0.0/8,DIRECT
-  - IP-CIDR6,fe80::/10,DIRECT
+  - IP-CIDR,127.0.0.0/8,DIRECT,no-resolve
+  - IP-CIDR,172.16.0.0/12,DIRECT,no-resolve
+  - IP-CIDR,192.168.0.0/16,DIRECT,no-resolve
+  - IP-CIDR,10.0.0.0/8,DIRECT,no-resolve
 
-  # 自定义白名单（机场主可在此添加自家服务域名直连）
-  # - DOMAIN-SUFFIX,your-panel.com,DIRECT
-
-  # 苹果推送 / 国内 CDN（geosite 分类，比手写域名更全面）
-  - GEOSITE,apple-cn,DIRECT
-  - GEOSITE,microsoft@cn,DIRECT
-  - GEOSITE,category-games@cn,DIRECT
-
-  # 国内常用网站
+  # 国内域名直连
   - GEOSITE,cn,DIRECT
+  - GEOSITE,private,DIRECT
 
-  # 国外常用网站走代理（这里列出来主要是为了「策略组选择」时能看到分类，
-  # 实际上下面的 geolocation-!cn 会兜底所有非中国流量）
-  - GEOSITE,youtube,$app_name
-  - GEOSITE,google,$app_name
-  - GEOSITE,facebook,$app_name
-  - GEOSITE,twitter,$app_name
-  - GEOSITE,telegram,$app_name
-  - GEOSITE,github,$app_name
-  - GEOSITE,netflix,$app_name
-  - GEOSITE,disney,$app_name
-  - GEOSITE,spotify,$app_name
-  - GEOSITE,category-ai-!cn,$app_name      # OpenAI / Claude / Gemini / Copilot 等
-
-  # 广告拦截（可选，机场主不想拦广告就注释掉这行）
-  - GEOSITE,category-ads-all,REJECT
-
-  # 国外网站统一走代理（兜底）
+  # 国外域名走代理
   - GEOSITE,geolocation-!cn,$app_name
 
   # IP 兜底
