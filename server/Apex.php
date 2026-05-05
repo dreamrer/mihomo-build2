@@ -163,8 +163,11 @@ trait ApexCore
                     $proxies[] = $item['name'];
                     break;
                 case 'vless':
-                    $proxy[] = self::buildVless($secret, $item);
-                    $proxies[] = $item['name'];
+                    $built = self::buildVless($secret, $item);
+                    if ($built !== null) {
+                        $proxy[] = $built;
+                        $proxies[] = $item['name'];
+                    }
                     break;
                 case 'trojan':
                     $proxy[] = self::buildTrojan($secret, $item);
@@ -470,20 +473,32 @@ trait ApexCore
         if ($server['tls']) {
             $array['tls'] = true;
             $tlsSettings = $server['tls_settings'] ?? [];
-            $array['skip-cert-verify'] = ($tlsSettings['allow_insecure'] ?? 0) == 1;
+            // Xboard 把 Reality 字段放到 protocol_settings.reality_settings；v2board 全在 tls_settings。
+            // tls=2 时优先 reality_settings，回落 tls_settings 兼容 v2board。
+            $realitySettings = ($server['tls'] == 2)
+                ? ($server['reality_settings'] ?? $tlsSettings)
+                : $tlsSettings;
+
+            $array['skip-cert-verify'] = ($realitySettings['allow_insecure'] ?? $tlsSettings['allow_insecure'] ?? 0) == 1;
             $array['flow'] = !empty($server['flow']) ? $server['flow'] : '';
             $array['client-fingerprint'] = !empty($tlsSettings['fingerprint']) ? $tlsSettings['fingerprint'] : 'chrome';
-            if ($tlsSettings) {
-                if (isset($tlsSettings['server_name']) && !empty($tlsSettings['server_name'])) {
-                    $array['servername'] = $tlsSettings['server_name'];
-                }
-                if ($server['tls'] == 2) {
-                    $array['reality-opts'] = [];
-                    $array['reality-opts']['public-key'] = $tlsSettings['public_key'];
-                    $array['reality-opts']['short-id'] = $tlsSettings['short_id'];
-                }
-                self::applyEch($array, $tlsSettings);
+
+            $sni = $realitySettings['server_name'] ?? $tlsSettings['server_name'] ?? '';
+            if (!empty($sni)) {
+                $array['servername'] = $sni;
             }
+            if ($server['tls'] == 2) {
+                $publicKey = $realitySettings['public_key'] ?? '';
+                // Reality 缺 public_key 写出去也连不上，直接丢弃这条节点，避免整个订阅 500。
+                if ($publicKey === '') {
+                    return null;
+                }
+                $array['reality-opts'] = [
+                    'public-key' => $publicKey,
+                    'short-id'   => $realitySettings['short_id'] ?? '',
+                ];
+            }
+            self::applyEch($array, $tlsSettings);
         }
 
         if ($server['network'] === 'tcp') {
