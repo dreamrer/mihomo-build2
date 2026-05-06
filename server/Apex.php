@@ -12,7 +12,7 @@
 |
 |  【必改 2，仅当你在打包机器人改过 UA】协议 flag  ($flag + $flags)
 |     ★ 跳到第 61 行 ★    public $flag = 'apex';
-|     ★ 跳到第 864 行 ★   public $flags = ['apex'];
+|     ★ 跳到第 880 行 ★   public $flags = ['apex'];
 |     ⚠ 这两处必须同时改成同一个值！
 |     - 用打包机器人**默认 UA**（Apex/v版本号） → 都填 'apex'，已经填好，不动
 |     - 自定义 UA 例 `MyVPN/v1`               → 都填 'myvpn'
@@ -741,10 +741,26 @@ trait ApexCore
             'skip-cert-verify' => $skip,
             'sni' => $sni,
             'udp' => true,
-            // 同 buildTrojan 注释：mihomo 默认 Go QUIC 指纹固定，GFW 识别 → 握手不上。
-            // hy2 走 QUIC（TLS 1.3 内嵌），uTLS 通过 chrome 指纹混淆 ClientHello。
-            'client-fingerprint' => 'chrome',
         ];
+
+        // client-fingerprint 改为 opt-in，跟 buildAnyTLS 同款逻辑：
+        //   hy2 走 QUIC，TLS 1.3 ClientHello 嵌在 QUIC Initial 里，理论上 uTLS chrome
+        //   能抗 GFW 的 ja3 检测；但部分服务端只接受 Go 默认 TLS（参考 huosyun 那边
+        //   anytls 的 RST），硬编码 chrome 反而踩坑。让 panel 显式开 utls 才下发。
+        //   - xboard:  $server['protocol_settings']['utls']['{enabled,fingerprint}']
+        //   - v2board: $server['tls_settings']['fingerprint']
+        $protocolSettings = is_array($server['protocol_settings'] ?? null)
+            ? $server['protocol_settings']
+            : [];
+        $tlsSettings = is_array($server['tls_settings'] ?? null)
+            ? $server['tls_settings']
+            : [];
+        $utls = $protocolSettings['utls'] ?? null;
+        if (is_array($utls) && !empty($utls['enabled']) && !empty($utls['fingerprint'])) {
+            $array['client-fingerprint'] = $utls['fingerprint'];
+        } elseif (!empty($tlsSettings['fingerprint'])) {
+            $array['client-fingerprint'] = $tlsSettings['fingerprint'];
+        }
 
         $parts = explode(',', $server['port']);
         $firstPart = $parts[0];
