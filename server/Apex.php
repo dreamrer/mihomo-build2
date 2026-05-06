@@ -12,7 +12,7 @@
 |
 |  【必改 2，仅当你在打包机器人改过 UA】协议 flag  ($flag + $flags)
 |     ★ 跳到第 61 行 ★    public $flag = 'apex';
-|     ★ 跳到第 833 行 ★   public $flags = ['apex'];
+|     ★ 跳到第 864 行 ★   public $flags = ['apex'];
 |     ⚠ 这两处必须同时改成同一个值！
 |     - 用打包机器人**默认 UA**（Apex/v版本号） → 都填 'apex'，已经填好，不动
 |     - 自定义 UA 例 `MyVPN/v1`               → 都填 'myvpn'
@@ -629,14 +629,45 @@ trait ApexCore
             'server' => $server['host'],
             'port' => $server['port'],
             'password' => $password,
-            'client-fingerprint' => 'chrome',
             'udp' => true,
-            'alpn' => ['h2', 'http/1.1'],
         ];
-        $tlsSettings = $server['tls_settings'] ?? [];
-        $array['sni'] = $server['server_name'] ?? ($tlsSettings['server_name'] ?? '');
-        $array['skip-cert-verify'] = ($server['insecure'] ?? ($tlsSettings['allow_insecure'] ?? 0)) == 1;
-        self::applyEch($array, $tlsSettings);
+
+        // 双 schema 兼容：
+        //   xboard:  $server['protocol_settings']['tls']  / ['utls']  （嵌套）
+        //   v2board: $server['tls_settings']                          （平铺）
+        $protocolSettings = is_array($server['protocol_settings'] ?? null)
+            ? $server['protocol_settings']
+            : [];
+        $tlsBlock = is_array($protocolSettings['tls'] ?? null)
+            ? $protocolSettings['tls']
+            : [];
+        $tlsSettings = is_array($server['tls_settings'] ?? null)
+            ? $server['tls_settings']
+            : [];
+
+        $sni = $server['server_name']
+            ?? ($tlsBlock['server_name'] ?? null)
+            ?? ($tlsSettings['server_name'] ?? '');
+        $array['sni'] = $sni;
+
+        $insecure = $server['insecure']
+            ?? ($tlsBlock['allow_insecure'] ?? null)
+            ?? ($tlsSettings['allow_insecure'] ?? 0);
+        $array['skip-cert-verify'] = ((int) $insecure) === 1;
+
+        // 不再硬编码 client-fingerprint=chrome 和 alpn=[h2,http/1.1]：
+        //   AnyTLS 协议自带反检测，不依赖 uTLS。某些机场（实测 huosyun）的服务端
+        //   期望 Go 默认 TLS，硬塞 chrome 指纹会在 AnyTLS session 创建时被 RST；
+        //   FlClash 拿 ClashMeta.php yaml 不带这俩字段所以能通。
+        //   仅当 panel 后台显式启用了 utls 才下发指纹（双 schema 都看）。
+        $utls = $protocolSettings['utls'] ?? null;
+        if (is_array($utls) && !empty($utls['enabled']) && !empty($utls['fingerprint'])) {
+            $array['client-fingerprint'] = $utls['fingerprint'];
+        } elseif (!empty($tlsSettings['fingerprint'])) {
+            $array['client-fingerprint'] = $tlsSettings['fingerprint'];
+        }
+
+        self::applyEch($array, $tlsSettings ?: $tlsBlock);
         return $array;
     }
 
