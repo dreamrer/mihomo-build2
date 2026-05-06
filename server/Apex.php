@@ -14,10 +14,22 @@
 |        - 部署前提：app/Protocols/ClashMeta.php 必须存在（Xboard / V2Board
 |          默认都自带）。找不到 ClashMeta 类时框架会报 "Class not found"。
 |
-|  机场主部署只需改 1 处：
-|     ★ 第 34 行 ★   private $encryptKey = '';
+|  机场主部署需要改 1~2 处：
+|
+|  【必改 1】加密密钥
+|     ★ 第 46 行 ★   private $encryptKey = '';
 |     去 Telegram 打包机器人 → 选你的配置 → 「查看加密密钥」复制粘贴。
 |     不填或填错 → 客户端解不出节点列表为空。
+|
+|  【必改 2，仅当客户端用了自定义 UA】协议 flag
+|     ★ 第 42 行 ★   public $flag  = 'apex';
+|     ★ 第 43 行 ★   public $flags = ['apex'];
+|     这两处必须**同时改成同一个值**，且与打包机器人里 APEX_FLAG 一致。
+|     - 默认 UA（`Apex/v{版本号}`）   → 都填 'apex'，已填好不动
+|     - 自定义 UA `MyVPN/v1.0`        → 都填 'myvpn'
+|     - 不知道填什么 → 打包机器人「查看加密密钥」也会同时显示当前 flag 值
+|     flag 不匹配 → 服务端 fallback 到通用订阅（base64 URI 列表），客户端
+|     拉到非加密内容报错，节点为空。
 |
 |==============================================================================
 */
@@ -27,7 +39,7 @@ namespace App\Protocols;
 class Apex extends ClashMeta
 {
     // Xboard 的 ProtocolManager 用 $flags 数组；V2Board 的 ClientController 用 $flag 字符串。两个都设。
-    public $flag = 'apex';
+    public $flag  = 'apex';
     public $flags = ['apex'];
 
     // 必填：加密密钥（必须与客户端打包时 XOR_KEY 完全一致）
