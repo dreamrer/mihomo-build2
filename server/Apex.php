@@ -570,6 +570,11 @@ trait ApexCore
         $array['port'] = $server['port'];
         $array['password'] = $password;
         $array['udp'] = true;
+        // 不带 client-fingerprint 时 mihomo 走 Go crypto/tls，TLS ClientHello 指纹固定，
+        // GFW 直接识别 RST/丢包；iOS Shadowrocket 走系统 TLS 没这个问题。chrome uTLS 伪装握手。
+        // alpn 不显式写：让 uTLS 按 chrome 默认发 [h2, http/1.1]，避免和 network=grpc 时的服务端
+        // ALPN 严格匹配规则冲突（gRPC 服务端通常要求只协商 h2）。
+        $array['client-fingerprint'] = 'chrome';
         if (isset($server['network']) && in_array($server['network'], ['grpc', 'ws'])) {
             $array['network'] = $server['network'];
             if ($server['network'] === 'grpc') {
@@ -705,6 +710,9 @@ trait ApexCore
             'skip-cert-verify' => $skip,
             'sni' => $sni,
             'udp' => true,
+            // 同 buildTrojan 注释：mihomo 默认 Go QUIC 指纹固定，GFW 识别 → 握手不上。
+            // hy2 走 QUIC（TLS 1.3 内嵌），uTLS 通过 chrome 指纹混淆 ClientHello。
+            'client-fingerprint' => 'chrome',
         ];
 
         $parts = explode(',', $server['port']);
