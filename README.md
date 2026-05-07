@@ -51,25 +51,19 @@ http://<router-ip>:9090/ui
 
 ## Server (Xboard / V2Board)
 
-Airport operators drop [`server/Apex.php`](server/Apex.php) into their panel's `app/Protocols/` directory to enable encrypted subscription delivery for the Apex client. **The same file works on both Xboard and V2Board** — it extends the panel's existing `ClashMeta.php` and just wraps the output in XOR encryption, so all protocol field handling (Vless / Trojan / AnyTLS / Hysteria2 / Reality / xhttp / ECH / utls) automatically inherits whatever ClashMeta does.
+机场主把 [`server/Apex.php`](server/Apex.php) 放进面板的 `app/Protocols/` 目录，开启加密订阅。同一份文件在 Xboard 和 V2Board 上都能跑。
 
-The client appends `?flag=apex` to subscription URLs automatically, so panel admins do not need to expose any new endpoint.
+部署前先去 Telegram 打包机器人 → 选你的配置 → 「查看加密密钥」，复制那串 `XOR_KEY`，待会儿要填进 Apex.php 的 `$encryptKey`。
 
-> **`$encryptKey` is mandatory.** Telegram build-bot → 选你的配置 → 「查看加密密钥」copy the value. The protocol throws `RuntimeException` on every request when this is empty — clients will see an empty node list.
+### 部署方式 1：Docker（裸 docker-compose）
 
-### Three supported deployment paths
+**手动下载 Apex.php**，放到 `compose.yaml` 同目录。打开文件，把 `$encryptKey` 填上你刚才复制的密钥：
 
-Xboard officially runs in docker (Swoole + Octane image). The three setups differ only in **how you edit compose** and **where the Apex.php source file lives on the host**; the in-container path is always `/www/app/Protocols/Apex.php`, and the reload command is always `php artisan octane:reload`.
+```php
+private $encryptKey = '你的XOR_KEY';
+```
 
-| # | Topology | What to edit | Reload |
-|---|----------|--------------|--------|
-| 1 | **Plain Docker Compose** (`compose.sample.yaml`) | The `compose.yaml` file you wrote | `docker compose exec xboard php artisan octane:reload` |
-| 2 | **aaPanel + Docker** (recommended) | aaPanel → 容器 → 编辑 compose | aaPanel → 重启容器, then `docker exec <c> php artisan octane:reload` |
-| 3 | **1Panel** (`compose.1panel.sample.yaml`) | 1Panel → 容器 → 编辑 compose | 1Panel → 重启容器, then `docker exec <c> php artisan octane:reload` |
-
-#### 1) Plain Docker Compose
-
-Add one line to the `volumes` block in your `compose.yaml`:
+在 `compose.yaml` 的 `volumes` 段加一行：
 
 ```yaml
 services:
@@ -82,112 +76,95 @@ services:
       - ./storage/theme:/www/storage/theme
       - ./plugins:/www/plugins
       - redis-data:/data
-      - ./Apex.php:/www/app/Protocols/Apex.php:ro    # ← add this
+      - ./Apex.php:/www/app/Protocols/Apex.php:ro
 ```
 
+应用：
+
 ```bash
-# Place Apex.php next to compose.yaml on the host
-wget -O ./Apex.php \
-     https://raw.githubusercontent.com/dreamrer/mihomo-build/main/server/Apex.php
-
-# Fill in $encryptKey (replace YOUR_XOR_KEY with the value from build-bot)
-sed -i "s|private \$encryptKey = '';|private \$encryptKey = 'YOUR_XOR_KEY';|" ./Apex.php
-
-# Apply
 docker compose up -d
 docker compose exec xboard php artisan octane:reload
 ```
 
-> **Why volume mount, not `docker exec ... vi`?**
-> The Xboard Dockerfile `git clone`s master at image build time, so any in-container edits are wiped on `docker pull` + recreate. The volume keeps Apex.php on the host filesystem so the file survives container rebuilds.
+### 部署方式 2：aaPanel + Docker
 
-#### 2) aaPanel + Docker (recommended)
+1. **手动下载 Apex.php**，上传到 aaPanel 上 xboard 项目的目录（一般是 `/www/wwwroot/xboard/`）
+2. 编辑里面的 `$encryptKey`
+3. aaPanel → 容器编排 → 编辑 xboard 的 compose，`volumes` 段加：
 
-aaPanel manages docker through its UI but the underlying compose is the same. Two paths:
-
-**Via aaPanel docker UI:**
-1. 容器管理 → 找到 xboard 容器 → 编辑（or 容器编排 → 编辑你的 compose 文件）
-2. 在 `volumes` 段加：`- /www/wwwroot/xboard-files/Apex.php:/www/app/Protocols/Apex.php:ro`
-   （`/www/wwwroot/xboard-files/` 改成你 aaPanel 上放 compose.yaml 的目录）
-3. 把 Apex.php 上传到那个目录、填 `$encryptKey`
-4. aaPanel 重启容器
-5. SSH 到服务器跑 `docker exec <container_name> php artisan octane:reload`
-
-**Via SSH (faster for ops):** same as Plain Docker Compose above. aaPanel doesn't lock you out of the underlying docker CLI.
-
-#### 3) 1Panel
-
-跟 aaPanel 几乎一样，1Panel 也提供容器管理 UI + compose 编辑：
-
-1. 容器 → 编排 → 选你的 xboard 编排 → 编辑
-2. `volumes` 段加：`- /opt/1panel/apps/xboard/Apex.php:/www/app/Protocols/Apex.php:ro`
-   （路径按你 1Panel 实际项目目录调整）
-3. 把 Apex.php 放到该目录、填 `$encryptKey`
-4. 1Panel UI 重启容器
-5. 终端：`docker exec <container_name> php artisan octane:reload`
-
-> 1Panel 的官方 compose 模板（`compose.1panel.sample.yaml`）跟默认 compose 唯一区别是加入了 `1panel-network`（让 xboard 容器能访问 1Panel 管理的 MySQL/Redis 容器）。Apex.php 挂载方式跟默认完全一样。
-
-### Verification (any deployment)
-
-```bash
-# 1. File present and reasonable size (~9KB)
-docker compose exec xboard ls -la /www/app/Protocols/Apex.php
-# or for non-docker: ls -la /www/wwwroot/<panel>/app/Protocols/Apex.php
-
-# 2. PHP syntax clean
-docker compose exec xboard php -l /www/app/Protocols/Apex.php
-
-# 3. Class registers correctly (should print ["apex"])
-docker compose exec xboard php artisan tinker --execute="echo json_encode((new ReflectionClass('App\\\\Protocols\\\\Apex'))->getProperty('flags')->getDefaultValue());"
-
-# 4. ?flag=apex actually routes to Apex.php (not falling back to General.php)
-curl -A 'Apex/v3.5.x' 'https://your-panel/api/v1/client/subscribe?token=xxx&flag=apex' | head -c 30 | xxd
+```yaml
+- /www/wwwroot/xboard/Apex.php:/www/app/Protocols/Apex.php:ro
 ```
 
-The last command's output tells you everything:
-- **Random-looking binary or `1a 20 5f ...`** → encrypted blob, Apex.php is alive ✅
-- **`64 6d 78 6c 63 33 4d 36`** (= base64 of `vless:`) or **`73 73 3a 2f ...`** (`ss://`) → fell back to General.php's URI list, Apex.php not loaded ❌
-- **`6d 69 78 65 64 2d 70 6f 72 74`** (`mixed-port`) → fell back to ClashMeta.php's plain YAML ❌
+4. aaPanel 重启容器
+5. SSH 终端跑：
 
-### Custom UA — change the flag
+```bash
+docker exec <容器名> php artisan octane:reload
+```
 
-If your build-bot is configured with a non-default `APEX_FLAG` (e.g., the client's User-Agent is `MyVPN/v1.0` instead of `Apex/v...`), the `$flag` and `$flags` constants in Apex.php must be changed to the same value or the panel will fall back to General.php.
+### 部署方式 3：1Panel
+
+1. **手动下载 Apex.php**，上传到 1Panel 上 xboard 项目目录（一般是 `/opt/1panel/apps/xboard/`）
+2. 编辑里面的 `$encryptKey`
+3. 1Panel → 容器 → 编排 → 编辑 xboard 编排，`volumes` 段加：
+
+```yaml
+- /opt/1panel/apps/xboard/Apex.php:/www/app/Protocols/Apex.php:ro
+```
+
+4. 1Panel 重启容器
+5. SSH 终端跑：
+
+```bash
+docker exec <容器名> php artisan octane:reload
+```
+
+### 验证
+
+```bash
+curl -A 'Apex/v3.5.x' 'https://你的面板/api/v1/client/subscribe?token=xxx&flag=apex' | head -c 30 | xxd
+```
+
+看输出前几个字节：
+
+- **看不出意义的二进制**（含 `41 50 45 58` 之类） → 加密成功，Apex.php 生效 ✅
+- 开头是 `vless`、`ss://`、`mixed-port` 之类可读字符串 → Apex.php 没生效，被路由 fallback 了 ❌
+
+❌ 排查：检查 `$encryptKey` 是否填了、容器有没有 `octane:reload`、文件权限是否可读。
+
+### 自定义 UA 时改 flag
+
+如果打包机器人配的 `APEX_FLAG` 不是默认的 `apex`（例如客户端 UA 是 `MyVPN/v1.0`），需要把 Apex.php 里这两行改成同一个值：
 
 ```php
-public $flag  = 'myvpn';        // line 71
-public $flags = ['myvpn'];      // line 72
+public $flag  = 'myvpn';
+public $flags = ['myvpn'];
 ```
 
-The Telegram bot's "查看加密密钥" view shows the current flag value alongside the key — copy both, change both.
+Telegram 机器人「查看加密密钥」页同时显示当前 flag，复制即可。
 
-### Recommended Clash template (强烈建议替换)
+### 替换默认 Clash 模板（可选但强烈建议）
 
-The stock `default.clash.yaml` shipped with v2board / Xboard has three problems that visibly hurt user experience:
+V2Board / Xboard 自带的 `default.clash.yaml` 三个问题：
 
-1. **DNS uses plain UDP-53** (223.5.5.5 / 119.29.29.29 / 8.8.8.8). ISP DNS hijacking strips SVCB records → ECH nodes can't resolve → timeout. UDP responses get truncated at 512B → large records lost.
-2. **Fallback group interval 7200s** (2 hours). When a proxy goes down, users sit on a dead node for up to 2 hours before mihomo retests.
-3. **Hundreds of hardcoded domain rules** that drift out of date. Modern mihomo supports `geosite`/`geoip` categories that auto-update.
+1. DNS 走明文 UDP-53，被 ISP 劫持 → ECH 节点解析不出
+2. 故障转移组 interval=7200s（2 小时），节点死了得等 2 小时才重测
+3. 几百行硬编码域名规则，过期严重
 
-[`server/default.clash.yaml`](server/default.clash.yaml) is a drop-in replacement:
+[`server/default.clash.yaml`](server/default.clash.yaml) 是替代版本：
 
-```bash
-# Backup the existing template, then replace
-cp /www/wwwroot/v2board/resources/rules/default.clash.yaml{,.bak}
-wget https://raw.githubusercontent.com/dreamrer/mihomo-build/main/server/default.clash.yaml \
-     -O /www/wwwroot/v2board/resources/rules/default.clash.yaml
-# Xboard same file path:
-#   /www/wwwroot/xboard/resources/rules/default.clash.yaml
-```
+- DNS 走 DoH/DoT（doh.pub / dns.alidns.com / Cloudflare / Google）
+- url-test interval 缩到 300s
+- `geosite:cn / geolocation-!cn / category-ads-all` 取代 500 行手写规则
+- 保留 `$app_name` 占位符（机场品牌名运行时替换）
 
-Highlights:
-- DNS via DoH/DoT (doh.pub, dns.alidns.com, 1.1.1.1, dns.google) — ECH-friendly
-- Sniffer enabled — required for Reality / xhttp / fakeip + domain rule matching
-- Fakeip filter covering Apple Push, Microsoft, gaming services, NTP, Stun
-- url-test/fallback intervals shortened to 300s
-- `geosite:cn / geolocation-!cn / category-ads-all` instead of 500+ hand-maintained lines
+**手动下载** [server/default.clash.yaml](server/default.clash.yaml)，替换面板的 `resources/rules/default.clash.yaml`：
 
-The `$app_name` placeholder stays — Apex.php / ClashMeta.php replace it with the panel's brand name on each subscription request.
+- V2Board 路径：`/www/wwwroot/v2board/resources/rules/default.clash.yaml`
+- Xboard 路径：`/www/wwwroot/xboard/resources/rules/default.clash.yaml`
+
+替换前先备份原文件。
 
 ## Build
 
