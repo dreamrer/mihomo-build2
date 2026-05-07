@@ -10,12 +10,12 @@
 |  机场主部署需要改 1~2 处：
 |
 |  【必改 1】加密密钥
-|     ★ 第 36 行 ★   private static $encryptKey = '';
+|     ★ 第 51 行 ★   $encryptKey = '';
 |     去 Telegram 打包机器人 → 选你的配置 → 「查看加密密钥」复制粘贴。
 |     不填或填错 → 客户端解不出节点列表为空。
 |
 |  【必改 2，仅当客户端用了自定义 UA】协议 flag
-|     ★ 第 39 行 ★   private static $apexFlag = 'apex';
+|     ★ 第 54 行 ★   $apexFlag = 'apex';
 |     与打包机器人里 APEX_FLAG 一致即可。
 |     默认 UA `Apex/v{版本号}` → 不动；自定义 UA `MyVPN/v1.0` → 改成 'myvpn'。
 |

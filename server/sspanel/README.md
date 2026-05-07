@@ -44,7 +44,7 @@ cp Apex.php /www/wwwroot/sspanel/src/Apex.php
 docker cp Apex.php sspanel-container:/var/www/sspanel/src/Apex.php
 ```
 
-### 2. 改 `Apex.php` 第 36 行的密钥
+### 2. 改 `Apex.php` 第 51 行的密钥
 
 ```php
 $encryptKey = '你的XOR_KEY';
@@ -105,14 +105,14 @@ curl -i -X POST https://你的面板/api/v1/passport/auth/login \
 
 打 Apex 客户端时，在打包机器人 wizard 里：
 - **panel_type**: 选 `sspanel`
-- **加密密钥**: 跟 `Apex.php` 第 36 行填的那串完全一致
-- **APEX_FLAG**: 跟 `Apex.php` 第 39 行的 `$apexFlag` 一致（默认 `apex`）
+- **加密密钥**: 跟 `Apex.php` 第 51 行填的那串完全一致
+- **APEX_FLAG**: 跟 `Apex.php` 第 54 行的 `$apexFlag` 一致（默认 `apex`）
 
 ## 排查
 
 ### 现象：登录返回 500 `Apex.php: $encryptKey 未配置`
 
-`Apex.php` 第 36 行 `$encryptKey` 没填或填了空字符串。改完后 `docker compose restart` 或 `systemctl restart php-fpm`。
+`Apex.php` 第 51 行 `$encryptKey` 没填或填了空字符串。改完后 `docker compose restart` 或 `systemctl restart php-fpm`。
 
 ### 现象：登录返回 200 但订阅返回 404
 
@@ -121,7 +121,7 @@ curl -i -X POST https://你的面板/api/v1/passport/auth/login \
 ### 现象：订阅前几个字节看着是可读的 yaml
 
 flag 不匹配，服务端返回了原文。检查：
-- 客户端打包时的 `APEX_FLAG` 跟 `Apex.php` 第 39 行 `$apexFlag` 是否一致
+- 客户端打包时的 `APEX_FLAG` 跟 `Apex.php` 第 54 行 `$apexFlag` 是否一致
 - 客户端发出的请求 URL 是否带了 `&flag=apex`
 
 ### 现象：客户端订阅卡片不显示流量/到期
