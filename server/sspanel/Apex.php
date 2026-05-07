@@ -165,6 +165,13 @@ return static function (App $app): void {
             // 调 SSPanel 自带的 Clash 渲染器
             $yaml = Subscribe::getContent($user, 'clash');
 
+            // 修补 SSPanel-Uim Clash.php case 14 (Trojan) 的已知 bug：
+            // 当节点 custom_config.header.type === 'none' 时，渲染输出
+            // network: none，被 mihomo 拒绝解析（只认 tcp/ws/grpc/h2/http）。
+            // V2Ray 里 header.type: none 的语义就是"TCP 不伪装 HTTP" = 纯 tcp，
+            // 这里直接归正。漏掉这步会导致单节点静默丢失。
+            $yaml = preg_replace('/^(\s*network:\s*)none\s*$/m', '${1}tcp', $yaml);
+
             // flag 匹配才加密；否则返回原文（机场主调试用）
             $body = ($flag === $apexFlag)
                 ? apexEncrypt($yaml, $encryptKey)

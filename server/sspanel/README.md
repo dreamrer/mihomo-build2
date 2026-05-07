@@ -3,9 +3,27 @@
 给 SSPanel 加上 V2Board 风格的 REST API + 加密订阅，让 Apex 客户端能像连 V2Board 一样登录自动拉订阅。
 
 支持：
-- [SSPanel-Uim](https://github.com/Anankke/SSPanel-Uim)（活跃主线）
-- [SSPanel-Metron](https://github.com/BobCoderS9/SSPanel-Metron)（Uim 的主题分支，API 完全兼容）
-- SSPanel-V3-Mod_Uim（Uim 的祖先，已停更但 API 兼容）
+- [SSPanel-Uim](https://github.com/Anankke/SSPanel-Uim)（活跃主线，10k+ stars）
+- [SSPanel-Metron](https://github.com/BobCoderS9/SSPanel-Metron)（Uim 的 CSS 主题包，后端就是 Uim）
+- SSPanel-V3-Mod_Uim 时代的老部署（已停更，API 兼容）
+
+## ⚠️ 协议支持范围
+
+SSPanel 在数据库层面只支持以下协议——这是平台天花板，跟客户端无关：
+
+| 协议 | 是否支持 |
+|---|---|
+| Shadowsocks | ✅ |
+| Shadowsocks-2022 | ✅ |
+| TUIC v5 | ✅ |
+| VMess (TCP / WS / gRPC / H2) | ✅ |
+| Trojan (TCP / WS / gRPC) | ✅ |
+| **VLESS / Reality** | ❌ SSPanel 不支持 |
+| **Hysteria / Hysteria2** | ❌ SSPanel 不支持 |
+| **AnyTLS** | ❌ SSPanel 不支持 |
+| **WireGuard** | ❌ SSPanel 不支持 |
+
+需要 Reality / Hy2 / AnyTLS 的机场主，请改用 [V2Board](https://github.com/v2board/v2board) 或 [Xboard](https://github.com/cedar2025/Xboard)（Apex 客户端原生支持，无需补丁）。
 
 ## 部署前提
 
