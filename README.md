@@ -6,36 +6,41 @@ Multi-platform build pipeline for Apex VPN client. Releases are published here a
 
 | Platform | Architecture | Format |
 |----------|-------------|--------|
-| Android | arm64-v8a / armeabi-v7a | APK |
-| Android TV | arm64-v8a / armeabi-v7a | APK |
+| Android | arm64-v8a + armeabi-v7a (fat APK) | APK |
+| Android TV | arm64-v8a + armeabi-v7a (fat APK) | APK |
 | Windows | x86_64 | EXE (Inno Setup) |
 | macOS | Universal (Apple Silicon + Intel) | DMG |
 | Linux | x86_64 | DEB / RPM / AppImage |
 | iOS | arm64 | IPA |
-| OpenWrt | amd64 / arm64 / armv7 / armv5 / mips / mipsle | ipk / .run |
+| OpenWrt | aarch64_generic / arm_cortex-a7 / x86_64 | ipk |
 
 ## OpenWrt
 
-OpenWrt packages contain the pre-compiled mihomo core binary along with init scripts, UCI config, and nftables firewall rules for transparent proxy.
+OpenWrt 包内含预编译的 mihomo 核心 + init 脚本 + UCI 配置 + 透明代理 nftables 规则。
 
-### Install
+### 选包
 
-**Option A — opkg (ipk, recommended):**
+| 路由器 | 选这个 |
+|---|---|
+| 红米 AX 系列 / 小米 AX 系列 / GL.iNet Flint / NanoPi R5 / 树莓派 4 | `mihomo_*_aarch64_generic.ipk` |
+| 小米 4A 千兆版 / Newifi 3 / 大部分 MT7621 设备 | `mihomo_*_arm_cortex-a7.ipk` |
+| N100/N5105 工控机 / PVE/ESXi 虚拟软路由 | `mihomo_*_x86_64.ipk` |
+
+不确定架构？SSH 进路由器跑 `opkg print-architecture` 看输出。
+
+### 安装
+
 ```bash
-# Install core (pick the .ipk matching your router arch)
+# 装核心（替换成你架构对应的那个 ipk）
 opkg install mihomo_*_aarch64_generic.ipk
-# Install LuCI web UI (architecture-independent)
+# 装 LuCI Web UI（架构无关，所有路由通用）
 opkg install luci-app-mihomo_*_all.ipk
 ```
-After install: LuCI → Services → Mihomo
 
-**Option B — self-extracting (.run):**
-```bash
-chmod +x mihomo-openwrt-arm64-*.run
-./mihomo-openwrt-arm64-*.run
-```
+装完打开 LuCI → Services → Mihomo 配置订阅。
 
-**Configure:**
+或命令行：
+
 ```bash
 uci set mihomo.config.enabled='1'
 uci set mihomo.config.subscription_url='https://your-panel.com/api/v1/client/subscribe?token=xxx'
@@ -43,7 +48,7 @@ uci commit mihomo
 /etc/init.d/mihomo start
 ```
 
-### Web Dashboard
+### Web 仪表盘
 
 ```
 http://<router-ip>:9090/ui

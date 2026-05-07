@@ -1561,14 +1561,16 @@ jobs:
 
           # OpenWrt ipk 架构命名（与 opkg 架构一致）
           # https://openwrt.org/docs/techref/instructionset
+          # 主流路由器只需 3 个架构：
+          #   x86_64           — 软路由（N100/N5105 工控机、PVE/ESXi 虚拟）
+          #   aarch64_generic  — arm64（红米/小米 AX、GL.iNet Flint、NanoPi 等）
+          #   arm_cortex-a7    — 老 MT7621（小米 4A 千兆、Newifi 3 等）
+          # 砍掉 armv5 / mips / mipsle：用户量 <3%，且 CPU 太弱跑不动现代代理。
           ipk_arch_name() {
             case "$1" in
               amd64)            echo "x86_64" ;;
               arm64)            echo "aarch64_generic" ;;
               armv7)            echo "arm_cortex-a7" ;;
-              armv5)            echo "arm_mpcore" ;;
-              mips-softfloat)   echo "mips_24kc" ;;
-              mipsle-softfloat) echo "mipsel_24kc" ;;
             esac
           }
 
@@ -1630,12 +1632,9 @@ jobs:
             rm -rf "$pkg" "$ctl" "/tmp/mihomo-$arch" /tmp/control.tar.gz /tmp/data.tar.gz /tmp/debian-binary
           }
 
-          build_arch amd64           amd64   "" ""
-          build_arch arm64           arm64   "" ""
-          build_arch armv7           arm     7  ""
-          build_arch armv5           arm     5  ""
-          build_arch mips-softfloat  mips    "" softfloat
-          build_arch mipsle-softfloat mipsle "" softfloat
+          build_arch amd64 amd64 "" ""
+          build_arch arm64 arm64 "" ""
+          build_arch armv7 arm   7  ""
 
           # ── 打 luci-app-mihomo_*.ipk（arch=all，Lua 脚本无需编译）──
           echo "=== Building luci-app-mihomo (all) ==="
@@ -1684,46 +1683,6 @@ jobs:
           luci_ipk="luci-app-${PKG_NAME}_${VER}_all.ipk"
           (cd /tmp && tar czf "$GITHUB_WORKSPACE/dist/$luci_ipk" ./debian-binary ./control.tar.gz ./data.tar.gz)
           rm -rf "$luci_pkg" "$luci_ctl" /tmp/control.tar.gz /tmp/data.tar.gz /tmp/debian-binary
-
-          # ── 打 .run（内嵌 core.ipk + luci-app.ipk，用 opkg install 注册到包数据库）──
-          echo "=== Building .run installers ==="
-          build_run() {
-            local arch="$1" ipk_arch; ipk_arch="$(ipk_arch_name "$arch")"
-            local core_ipk="${PKG_NAME}_${VER}_${ipk_arch}.ipk"
-            local luci="luci-app-${PKG_NAME}_${VER}_all.ipk"
-
-            # 组装 payload：两个 ipk 打成 tar.gz
-            local pay="/tmp/run-payload-$arch.tar.gz"
-            tar czf "$pay" -C "$GITHUB_WORKSPACE/dist" "$core_ipk" "$luci"
-
-            # .run 文件名保留 APP_NAME（展示用），内部用 PKG_NAME
-            local run_name="${APP_NAME}-openwrt-${arch}-${VER}.run"
-            local run_path="$GITHUB_WORKSPACE/dist/$run_name"
-            {
-              printf '#!/bin/sh\n'
-              printf '# Apex OpenWrt installer (opkg-registered)\n'
-              printf 'set -e\n'
-              printf 'echo "[%s] installing via opkg..."\n' "$APP_NAME"
-              printf 'TMPDIR=$(mktemp -d -t apex-XXXXXX)\n'
-              printf 'trap "rm -rf $TMPDIR" EXIT\n'
-              printf 'ARCHIVE_LINE=$(awk '"'"'/^__ARCHIVE_BELOW__/ {print NR + 1; exit 0;}'"'"' "$0")\n'
-              printf 'tail -n +"$ARCHIVE_LINE" "$0" | tar xzf - -C "$TMPDIR"\n'
-              printf 'opkg update 2>/dev/null || true\n'
-              printf 'opkg install --force-reinstall "$TMPDIR/%s" "$TMPDIR/%s"\n' "$core_ipk" "$luci"
-              printf 'echo "[%s] installed. LuCI menu: Services -> Mihomo"\n' "$APP_NAME"
-              printf 'exit 0\n'
-              printf '__ARCHIVE_BELOW__\n'
-            } > "$run_path"
-            cat "$pay" >> "$run_path"
-            chmod 755 "$run_path"
-            rm -f "$pay"
-          }
-          build_run amd64
-          build_run arm64
-          build_run armv7
-          build_run armv5
-          build_run mips-softfloat
-          build_run mipsle-softfloat
 
           echo "=== All OpenWrt packages ==="
           ls -lh dist/
@@ -1779,7 +1738,7 @@ jobs:
               dist = Path("dist")
               files = sorted(f.name for f in dist.rglob("*") if f.is_file()) if dist.exists() else []
               file_list = "\n".join(f"• `{f}`" for f in files) if files else "（无文件）"
-              msg = f"✅ *{label}* 构建完成（6 个架构）\n\n{file_list}\n\n🔗 [前往 Actions 下载]({run_url})\n⚠️ 需登录 GitHub 账号"
+              msg = f"✅ *{label}* 构建完成（3 个架构 + LuCI）\n\n{file_list}\n\n🔗 [前往 Actions 下载]({run_url})\n⚠️ 需登录 GitHub 账号"
           else:
               msg = f"❌ *{label}* 构建失败 — [查看日志]({run_url})"
 
